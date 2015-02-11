@@ -531,6 +531,7 @@ ngx_http_auth_radius_create_main_conf( ngx_conf_t *cf )
     mconf->log = NGX_CONF_UNSET_PTR;
     mconf->radius_attempts = NGX_CONF_UNSET;
     mconf->radius_timeout = NGX_CONF_UNSET_MSEC;
+    radius_destroy_servers();
     return mconf;
 }
 

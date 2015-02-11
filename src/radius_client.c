@@ -153,6 +153,9 @@ void radius_destroy_servers() {
             rs->s = -1;
         }
     }
+
+    s_array_free(radius_servers, NULL);
+    radius_servers = NULL;
 }
 
 radius_req_queue_node_t*
@@ -285,7 +288,7 @@ radius_send_request( radius_req_queue_node_t* prev_req, radius_str_t* user, radi
         abort();
     }
 
-    rlog( rs, "acquire_req_queue_node: 0x%lx, r: 0x%lx", n, n->data );
+    rlog( rs, "acquire_req_queue_node: #rs: %d, 0x%lx, r: 0x%lx", radius_servers->size, n, n->data );
     
     int len = create_radius_req( rs->process_buff, sizeof( rs->process_buff ), 
         n->ident, user, passwd, &rs->secret, &rs->nas_identifier, n->auth );
