@@ -9,7 +9,7 @@ extern "C" {
 
 typedef struct s_array_t
 {
-    void* data;
+    void* elts;
     uint32_t max_size;
     uint32_t size;
     uint32_t elem_size;

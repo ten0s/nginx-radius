@@ -385,7 +385,7 @@ ngx_http_auth_radius_init_servers( ngx_cycle_t *cycle) {
     return NGX_OK;
 }
 
-void
+static void
 ngx_http_auth_radius_destroy_servers( ngx_cycle_t *cycle) {
     radius_destroy_servers();
 }
@@ -470,23 +470,24 @@ ngx_http_radius_set_radius_attempts( ngx_conf_t *cf, ngx_command_t *cmd, void *c
 static char*
 ngx_http_radius_set_radius_server( ngx_conf_t *cf, ngx_command_t *cmd, void *conf ) {
 
-    ngx_http_auth_radius_main_conf_t* mconf = ngx_http_conf_get_module_main_conf( cf, ngx_http_auth_radius_module );
+    ngx_http_auth_radius_main_conf_t* mconf = ngx_http_conf_get_module_main_conf(cf, ngx_http_auth_radius_module);
 
     ngx_str_t* value = cf->args->elts;
-    if ( cf->args->nelts != 3 && cf->args->nelts != 4 )
-        return "invalid value";
+    if (cf->args->nelts != 3 && cf->args->nelts != 4)
+        return "Invalid 'radius_server' value";
 
     ngx_url_t u;
-    ngx_memzero( &u, sizeof(ngx_url_t) );
+    ngx_memzero(&u, sizeof(ngx_url_t));
     u.url = value[1];
     u.uri_part = 1;
     u.default_port = RADIUS_DEFAULT_PORT;
-    if ( ngx_parse_url( cf->pool, &u ) != NGX_OK ) {
-        if ( u.err ) {
-            ngx_conf_log_error( NGX_LOG_EMERG, cf, 0,
-                            "%s ngx_http_radius_set_radius_server \"%V\"", u.err, &u.url );
+    if (ngx_parse_url(cf->pool, &u) != NGX_OK) {
+        if (u.err) {
+            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                               "%s ngx_http_radius_set_radius_server \"%V\"",
+                               u.err, &u.url);
         }
-        return "invalid address";
+        return "Invalid 'radius_server:url' value";
     }
 
     radius_str_t secret;
@@ -500,13 +501,13 @@ ngx_http_radius_set_radius_server( ngx_conf_t *cf, ngx_command_t *cmd, void *con
     nas_identifier.s = NULL;
     nas_identifier.len = 0;
 
-    if ( cf->args->nelts == 4 ) {
+    if (cf->args->nelts == 4) {
         nas_identifier.s = value[3].data;
         nas_identifier.len = value[3].len;
     }
 
     radius_server_t* rs;
-    rs = radius_add_server( u.addrs[0].sockaddr, u.addrs[0].socklen, &secret, &nas_identifier );
+    rs = radius_add_server(u.addrs[0].sockaddr, u.addrs[0].socklen, &secret, &nas_identifier);
     rs->logger = radius_logger;
 
     return NGX_CONF_OK;

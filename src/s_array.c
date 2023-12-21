@@ -8,7 +8,7 @@ s_array_init( struct s_array_t* array, int32_t init_size, int32_t elem_size )
 {
     if ( ! array )
         array = ( struct s_array_t*) malloc( sizeof( *array ) );
-    array->data = calloc( init_size, elem_size );
+    array->elts = calloc( init_size, elem_size );
     array->max_size = init_size;
     array->elem_size = elem_size;
     array->size = 0;
@@ -26,20 +26,20 @@ s_array_ensure_n( struct s_array_t* array, int n )
         uint32_t new_max_size = array->max_size * 2;
         if ( new_max_size <= need_size )
             new_max_size += need_size;
-        void* new = realloc( array->data, new_max_size * array->elem_size );
+        void* new = realloc( array->elts, new_max_size * array->elem_size );
         if ( new == NULL )
             return NULL;
-        array->data = new;
+        array->elts = new;
         array->max_size = new_max_size;
     }
-    return array->data;
+    return array->elts;
 }
 
 void*
 s_array_get( struct s_array_t* array, uint32_t ix )
 {
     assert( ix <= array->size );
-    return (char*) array->data + array->elem_size * ix;
+    return (char*) array->elts + array->elem_size * ix;
 }
 
 void*
@@ -66,13 +66,13 @@ void
 s_array_free( struct s_array_t* array, void (*clear_func)(void*) )
 {
     uint32_t i;
-    if( ! array->data )
+    if( ! array->elts )
         return;
     for( i = 0; i < array->size; i++ ) {
         if ( clear_func )
             clear_func( s_array_get( array, i ) );
     }
-    free( array->data );
-    array->data = NULL;
+    free( array->elts );
+    array->elts = NULL;
     array->size = 0;
 }

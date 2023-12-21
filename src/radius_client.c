@@ -134,6 +134,7 @@ radius_init_servers() {
     if (radius_servers == NULL)
         return -1;
 
+    printf("radius_servers->size: %d\n", radius_servers->size);
     for (i = 0; i < radius_servers->size; i++) {
         rs = (radius_server_t *) s_array_get(radius_servers, i);
         rs->sockfd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -273,7 +274,7 @@ radius_recv_request( radius_server_t* rs ) {
 radius_req_queue_node_t*
 radius_send_request( radius_req_queue_node_t* prev_req, radius_str_t* user, radius_str_t* passwd, void* log ) {
 
-    radius_server_t* rss = radius_servers->data;
+    radius_server_t* rss = radius_servers->elts;
     radius_server_t* rs;
 
     if ( prev_req == NULL ) {
@@ -294,15 +295,16 @@ radius_send_request( radius_req_queue_node_t* prev_req, radius_str_t* user, radi
         abort();
     }
 
-    rlog( rs, "acquire_req_queue_node: #rs: %d, 0x%lx, r: 0x%lx", radius_servers->size, n, n->data );
+    rlog(rs, "acquire_req_queue_node: #rs: %d, fd: %d, 0x%lx, r: 0x%lx",
+         radius_servers->size, rs->sockfd, n, n->data);
 
     int len = create_radius_req( rs->process_buff, sizeof( rs->process_buff ),
         n->ident, user, passwd, &rs->secret, &rs->nas_identifier, n->auth );
 
     int rc = sendto(rs->sockfd, rs->process_buff, len, 0, rs->sockaddr, rs->socklen);
-    if ( rc == -1 ) {
-        rlog( rs, "radius_send_request: sendto, r: 0x%lx, len: %u, error: %u", n->data,
-            len, ngx_errno );
+    if (rc == -1) {
+        rlog(rs, "radius_send_request: sendto, fd: %d, r: 0x%lx, len: %u, error: %u",
+              rs->sockfd, n->data, len, ngx_errno);
         release_req_queue_node( n );
         return NULL;
     }
