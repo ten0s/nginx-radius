@@ -112,76 +112,7 @@ ngx_module_t ngx_http_auth_radius_module = {
 
 #define RADIUS_STR_FROM_NGX_STR_INITIALIZER( ns ) .len = ns.len, .s = ns.data
 
-static ngx_int_t
-ngx_http_auth_radius_init_subrequest( ngx_http_request_t *r, ngx_str_t* url, ngx_str_t* args, ngx_http_post_subrequest_pt handler ) {
-
-    ngx_http_request_t* sr;
-    ngx_http_post_subrequest_t* ps;
-
-    ps = ngx_palloc( r->pool, sizeof( ngx_http_post_subrequest_t ) );
-    if ( ps == NULL ) {
-        return NGX_ERROR;
-    }
-
-    ps->handler = handler;
-    if ( ngx_http_subrequest( r, url, args, &sr, ps, 
-            NGX_HTTP_SUBREQUEST_IN_MEMORY | NGX_HTTP_SUBREQUEST_WAITED
-                ) != NGX_OK ) {
-        return NGX_ERROR;
-    }
-
-    return NGX_OK;
-}
-
-static ngx_int_t 
-ngx_http_auth_radius_subrequest_mcset_done( ngx_http_request_t *r, void *data, ngx_int_t rc ) {
-    return rc;
-}
-
-static ngx_int_t 
-ngx_http_auth_radius_subrequest_mcget_done( ngx_http_request_t *r, void *data, ngx_int_t rc ) {
-
-    if ( rc != NGX_OK ) {
-        return rc;
-    }
-
-    ngx_http_request_t* mr = r->main;
-    ngx_http_upstream_t* u;
-
-    u = r->upstream;
-    if ( u->buffer.pos == u->buffer.last ) { 
-        // cache not found, send radius request
-        ngx_send_radius_request( mr, NULL );
-        return NGX_AGAIN;
-    }
-
-    // found
-    ngx_str_t value;
-    value.data = r->upstream->buffer.pos;
-    value.len = r->upstream->buffer.last - r->upstream->buffer.pos;
-
-    if ( value.len != 1 ) {
-        ngx_send_radius_request( mr, NULL );
-        return NGX_OK;
-    }
-    if ( *value.data != '1' ) {
-        ngx_send_radius_request( mr, NULL );
-        return NGX_OK;
-    }
-
-    if ( mr->connection->read->timer_set ) {
-        mr->connection->read->timer_set = 0;
-        ngx_del_timer( mr->connection->read );
-    }
-
-    ngx_http_auth_radius_ctx_t* ctx = ngx_http_get_module_ctx( mr, ngx_http_auth_radius_module );
-    ctx->done = 1;
-    ctx->accepted = 1;
-
-    return NGX_OK;
-}
-
-void 
+static void
 radius_logger( void* log, const char* fmt ) {
     ngx_uint_t level = 0;
     ngx_err_t err = 0;
@@ -233,22 +164,9 @@ radius_read_handler( ngx_event_t* rev ) {
     ctx->done = 1;
     ctx->accepted = n->accepted;
 
-    ngx_http_auth_radius_main_conf_t* conf = ngx_http_get_module_loc_conf( r, ngx_http_auth_radius_module );
-    ngx_str_t args;
-    ngx_str_t key;
-    key.data = ctx->digest;
-    key.len = sizeof( ctx->digest );
-    args.len = sizeof( "o=set&v=X&k=" ) - 1 + key.len; // TODO
-    args.data = ngx_palloc( r->pool, args.len );
-    u_char* e = ngx_snprintf( args.data, args.len, "o=set&v=%d&k=%V", n->accepted, &key );
-    args.len = e - args.data;
-    int rc = ngx_http_auth_radius_init_subrequest( r, &conf->radius_cache, &args, ngx_http_auth_radius_subrequest_mcset_done );
-    if ( rc != NGX_OK )
-        abort(); // TODO
     ngx_post_event( r->connection->write, &ngx_posted_events );
 
     release_req_queue_node( n );
-
 }
 
 
@@ -430,21 +348,11 @@ ngx_http_auth_radius_handler( ngx_http_request_t *r )
         ctx->done = 0;
         ctx->accepted = 0;
         ngx_http_set_ctx( r, ctx, ngx_http_auth_radius_module );
+
+        // DKL: is it needed?
         r->read_event_handler = http_req_read_handler;
 
-        ngx_str_t args;
-        ngx_str_t key;
-
-        calc_req_digest( r, &conf->secret, ctx->digest );
-        key.data = ctx->digest;
-        key.len = sizeof( ctx->digest );
-        args.len = sizeof( "o=get&k=" ) - 1 + key.len; // TODO
-        args.data = ngx_palloc( r->pool, args.len );
-        u_char* e = ngx_snprintf( args.data, args.len, "o=get&k=%V", &key );
-        args.len = e - args.data;
-
-        rc = ngx_http_auth_radius_init_subrequest( r, &conf->radius_cache, &args, ngx_http_auth_radius_subrequest_mcget_done );
-
+        ngx_send_radius_request( r, NULL );
         return NGX_AGAIN;
     }
 
@@ -578,7 +486,6 @@ ngx_http_radius_set_radius_server( ngx_conf_t *cf, ngx_command_t *cmd, void *con
     ngx_memzero( &u, sizeof(ngx_url_t) );
     u.url = value[1];
     u.uri_part = 1;
-    u.one_addr = 1;
     u.default_port = RADIUS_DEFAULT_PORT;
     if ( ngx_parse_url( cf->pool, &u ) != NGX_OK ) {
         if ( u.err ) {
