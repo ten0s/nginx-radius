@@ -3,8 +3,8 @@
 #include <string.h>
 #include "s_array.h"
 
-struct s_array_t* 
-s_array_init( struct s_array_t* array, int32_t init_size, int32_t elem_size ) 
+struct s_array_t*
+s_array_init( struct s_array_t* array, int32_t init_size, int32_t elem_size )
 {
     if ( ! array )
         array = ( struct s_array_t*) malloc( sizeof( *array ) );
@@ -15,7 +15,7 @@ s_array_init( struct s_array_t* array, int32_t init_size, int32_t elem_size )
     return array;
 }
 
-void* 
+void*
 s_array_ensure_n( struct s_array_t* array, int n )
 {
     if ( n == 0 )
@@ -35,7 +35,7 @@ s_array_ensure_n( struct s_array_t* array, int n )
     return array->data;
 }
 
-void* 
+void*
 s_array_get( struct s_array_t* array, uint32_t ix )
 {
     assert( ix <= array->size );
@@ -57,19 +57,19 @@ s_array_add_n( struct s_array_t* array, void* elem, int n )
 }
 
 void*
-s_array_add( struct s_array_t* array, void* elem ) 
+s_array_add( struct s_array_t* array, void* elem )
 {
     return s_array_add_n( array, elem, 1 );
 }
 
-void 
-s_array_free( struct s_array_t* array, void (*clear_func)(void*) ) 
+void
+s_array_free( struct s_array_t* array, void (*clear_func)(void*) )
 {
     uint32_t i;
     if( ! array->data )
         return;
     for( i = 0; i < array->size; i++ ) {
-        if ( clear_func ) 
+        if ( clear_func )
             clear_func( s_array_get( array, i ) );
     }
     free( array->data );

@@ -22,7 +22,7 @@ typedef struct {
     uint32_t                    magic;
     uint8_t                     id;
     struct  sockaddr*           sockaddr;
-    socklen_t                   socklen; 
+    socklen_t                   socklen;
     int                         s;
     radius_str_t                secret;
     radius_str_t                nas_identifier;
@@ -33,7 +33,7 @@ typedef struct {
     radius_req_queue_node_t     req_queue[ UCHAR_MAX + 1 ];
     radius_req_queue_node_t*    req_free_list;
     radius_req_queue_node_t*    req_last_list;
-    u_char                      process_buff[ 4096 ]; 
+    u_char                      process_buff[ 4096 ];
     void*                       data;
 } radius_server_t;
 

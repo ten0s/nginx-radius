@@ -39,9 +39,9 @@ static ngx_command_t  ngx_http_auth_radius_commands[] = {
 
     { ngx_string( "radius_server" ),
       NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_CONF_TAKE23,
-      ngx_http_radius_set_radius_server, 
+      ngx_http_radius_set_radius_server,
       0,
-      0, 
+      0,
       NULL },
 
     { ngx_string( "radius_timeout" ),
@@ -49,14 +49,14 @@ static ngx_command_t  ngx_http_auth_radius_commands[] = {
       ngx_http_radius_set_radius_timeout,
       0,
       0,
-      NULL }, 
+      NULL },
 
     { ngx_string( "radius_attempts" ),
       NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_CONF_TAKE1,
       ngx_http_radius_set_radius_attempts,
       0,
       0,
-      NULL }, 
+      NULL },
 
     { ngx_string( "radius_cache" ),
       NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_CONF_TAKE1,
@@ -119,7 +119,7 @@ radius_logger( void* log, const char* fmt ) {
     ngx_log_error_core( level, log, err, fmt, NULL );
 }
 
-void 
+static void
 radius_read_handler( ngx_event_t* rev ) {
 
     ngx_connection_t* c = rev->data;
@@ -193,7 +193,7 @@ ngx_send_radius_request( ngx_http_request_t *r, radius_req_queue_node_t* prev_re
     }
 
     ngx_http_auth_radius_main_conf_t* lconf = ngx_http_get_module_loc_conf( r, ngx_http_auth_radius_module );
-    ngx_add_timer( r->connection->read, lconf->radius_timeout ); 
+    ngx_add_timer( r->connection->read, lconf->radius_timeout );
 
     radius_server_t* rs;
     rs = get_server_by_req( n );
@@ -241,11 +241,11 @@ ngx_send_radius_request( ngx_http_request_t *r, radius_req_queue_node_t* prev_re
     return NGX_OK;
 }
 
-void 
+static void
 http_req_read_handler( ngx_http_request_t *r ) {
 
     ngx_http_auth_radius_ctx_t* ctx = ngx_http_get_module_ctx( r, ngx_http_auth_radius_module );
-    
+
     ngx_connection_t* c = r->connection;
     ngx_event_t* rev = c->read;
 
@@ -270,7 +270,7 @@ http_req_read_handler( ngx_http_request_t *r ) {
         c->error = 1;
         if ( ctx->n != NULL ) {
             ctx->n->active = 0;
-        } 
+        }
         ngx_http_finalize_request( r, 0 );
         return;
     } else if (n == -1) {
@@ -286,21 +286,24 @@ http_req_read_handler( ngx_http_request_t *r ) {
     ngx_http_block_reading( r );
 }
 
+/* DKL seems unused */
+/*
 void
 calc_req_digest( ngx_http_request_t* r, radius_str_t* secret, u_char* digest ) {
 
-    ngx_md5_t md5; 
-    ngx_md5_init( &md5 ); 
-    ngx_md5_update( &md5, secret->s, secret->len ); 
-    ngx_md5_update( &md5, r->headers_in.user.data, r->headers_in.user.len ); 
-    ngx_md5_update( &md5, r->headers_in.passwd.data, r->headers_in.passwd.len ); 
+    ngx_md5_t md5;
+    ngx_md5_init( &md5 );
+    ngx_md5_update( &md5, secret->s, secret->len );
+    ngx_md5_update( &md5, r->headers_in.user.data, r->headers_in.user.len );
+    ngx_md5_update( &md5, r->headers_in.passwd.data, r->headers_in.passwd.len );
 
     u_char d[ 16 ];
-    ngx_md5_final( d, &md5 ); 
+    ngx_md5_final( d, &md5 );
 
     ngx_hex_dump( digest, d, sizeof( d ) );
 
 }
+*/
 
 static ngx_int_t
 ngx_http_auth_radius_handler( ngx_http_request_t *r )
@@ -310,7 +313,7 @@ ngx_http_auth_radius_handler( ngx_http_request_t *r )
 
     ngx_http_auth_radius_main_conf_t* conf = ngx_http_get_module_loc_conf( r, ngx_http_auth_radius_module );
     if ( conf->realm.data == NULL || conf->realm.len == 0 )
-        return NGX_OK;
+        return NGX_DECLINED;
 
     ngx_int_t rc = ngx_http_auth_basic_user( r );
 
@@ -328,7 +331,7 @@ ngx_http_auth_radius_handler( ngx_http_request_t *r )
         r->headers_out.www_authenticate->key.len = sizeof( "WWW-Authenticate" ) - 1;
         r->headers_out.www_authenticate->key.data = (u_char *) "WWW-Authenticate";
 
-        ngx_int_t realm_len = sizeof( "Basic realm=\"\"" ) + conf->realm.len;    
+        ngx_int_t realm_len = sizeof( "Basic realm=\"\"" ) + conf->realm.len;
 
         ngx_buf_t* b = ngx_create_temp_buf( r->pool, realm_len );
         ngx_snprintf( b->pos, realm_len, "Basic realm=\"%V\"", &conf->realm );
@@ -372,13 +375,12 @@ ngx_http_auth_radius_init( ngx_conf_t *cf )
 
     cmcf = ngx_http_conf_get_module_main_conf( cf, ngx_http_core_module );
 
-    //h = ngx_array_push( &cmcf->phases[ NGX_HTTP_PREACCESS_PHASE ].handlers );
     h = ngx_array_push( &cmcf->phases[ NGX_HTTP_ACCESS_PHASE ].handlers );
     if (h == NULL) {
         return NGX_ERROR;
     }
 
-    *h = ngx_http_auth_radius_handler; 
+    *h = ngx_http_auth_radius_handler;
 
     return NGX_OK;
 }
@@ -448,7 +450,7 @@ ngx_http_radius_set_auth_radius( ngx_conf_t *cf, ngx_command_t *cmd, void *conf 
 
     ngx_str_t* value = cf->args->elts;
 
-    if ( ngx_strncasecmp( (unsigned char*) "off", value[1].data, 3 ) == 0 ) 
+    if ( ngx_strncasecmp( (unsigned char*) "off", value[1].data, 3 ) == 0 )
         return NGX_CONF_OK;
 
     ngx_http_auth_radius_main_conf_t* mconf = ngx_http_conf_get_module_loc_conf( cf, ngx_http_auth_radius_module );
@@ -457,7 +459,7 @@ ngx_http_radius_set_auth_radius( ngx_conf_t *cf, ngx_command_t *cmd, void *conf 
     return NGX_CONF_OK;
 }
 
-static char* 
+static char*
 ngx_http_radius_set_radius_timeout( ngx_conf_t *cf, ngx_command_t *cmd, void *conf ) {
     ngx_str_t* value = cf->args->elts;
     ngx_http_auth_radius_main_conf_t* mconf = ngx_http_conf_get_module_main_conf( cf, ngx_http_auth_radius_module );
@@ -465,7 +467,7 @@ ngx_http_radius_set_radius_timeout( ngx_conf_t *cf, ngx_command_t *cmd, void *co
     return NGX_CONF_OK;
 }
 
-static char* 
+static char*
 ngx_http_radius_set_radius_attempts( ngx_conf_t *cf, ngx_command_t *cmd, void *conf ) {
     ngx_str_t* value = cf->args->elts;
     ngx_http_auth_radius_main_conf_t* mconf = ngx_http_conf_get_module_main_conf( cf, ngx_http_auth_radius_module );
@@ -473,7 +475,7 @@ ngx_http_radius_set_radius_attempts( ngx_conf_t *cf, ngx_command_t *cmd, void *c
     return NGX_CONF_OK;
 }
 
-static char* 
+static char*
 ngx_http_radius_set_radius_server( ngx_conf_t *cf, ngx_command_t *cmd, void *conf ) {
 
     ngx_http_auth_radius_main_conf_t* mconf = ngx_http_conf_get_module_main_conf( cf, ngx_http_auth_radius_module );
@@ -517,4 +519,3 @@ ngx_http_radius_set_radius_server( ngx_conf_t *cf, ngx_command_t *cmd, void *con
 
     return NGX_CONF_OK;
 }
-

@@ -39,7 +39,7 @@ radius_random() {
     return (unsigned char)( random() & UCHAR_MAX );
 }
 
-typedef enum { 
+typedef enum {
     radius_attr_type_str,
     radius_attr_type_address,
     radius_attr_type_integer,
@@ -120,8 +120,8 @@ radius_add_server( struct sockaddr* sockaddr, socklen_t socklen, radius_str_t* s
         qn->ident = i;
         rs->req_queue[ i - 1 ].next = qn;
     }
-    rs->req_free_list = &rs->req_queue[ 0 ]; 
-    rs->req_last_list = qn; 
+    rs->req_free_list = &rs->req_queue[ 0 ];
+    rs->req_last_list = qn;
 
     return rs;
 }
@@ -180,7 +180,7 @@ get_server_by_req( radius_req_queue_node_t* n ) {
     return rs;
 }
 
-void 
+void
 rlog( radius_server_t* rs, const char* fmt, ... ) {
     va_list  args;
     va_start( args, fmt );
@@ -250,7 +250,7 @@ radius_recv_request( radius_server_t* rs ) {
     memcpy( &pkg->hdr.auth, &n->auth, sizeof( pkg->hdr.auth ) );
     ngx_md5_update( &ctx, pkg, len );
     ngx_md5_update( &ctx, rs->secret.s, rs->secret.len );
-    ngx_md5_final( check, &ctx ); 
+    ngx_md5_final( check, &ctx );
 
     if( 0 != memcmp( save_auth, check, sizeof( save_auth ) ) ) {
         rlog( rs, "radius_recv_request: incorrect auth, r: 0x%lx", n->data );
@@ -269,7 +269,7 @@ radius_send_request( radius_req_queue_node_t* prev_req, radius_str_t* user, radi
 
     radius_server_t* rss = radius_servers->data;
     radius_server_t* rs;
-    
+
     if ( prev_req == NULL ) {
         rs = &rss[0];
     } else {
@@ -277,7 +277,7 @@ radius_send_request( radius_req_queue_node_t* prev_req, radius_str_t* user, radi
         rs = &rss[( rs->id + 1 ) % radius_servers->size ];
         release_req_queue_node( prev_req );
     }
-    
+
     if ( !rs->log )
         rs->log = log;
 
@@ -289,8 +289,8 @@ radius_send_request( radius_req_queue_node_t* prev_req, radius_str_t* user, radi
     }
 
     rlog( rs, "acquire_req_queue_node: #rs: %d, 0x%lx, r: 0x%lx", radius_servers->size, n, n->data );
-    
-    int len = create_radius_req( rs->process_buff, sizeof( rs->process_buff ), 
+
+    int len = create_radius_req( rs->process_buff, sizeof( rs->process_buff ),
         n->ident, user, passwd, &rs->secret, &rs->nas_identifier, n->auth );
 
     int rc = sendto( rs->s, rs->process_buff, len, 0, rs->sockaddr, rs->socklen );
@@ -320,13 +320,13 @@ gen_authenticator( radius_auth_t* auth ) {
 static radius_error_t
 check_str_attr_range_mem( radius_pkg_builder_t* b, int radius_attr_id, uint16_t len ) {
 
-    if ( len < attrs_desc[ radius_attr_id ].len_min 
+    if ( len < attrs_desc[ radius_attr_id ].len_min
                     || len > attrs_desc[ radius_attr_id ].len_max )
         return radius_err_range;
     size_t remain = sizeof( b->pkg->attrs ) - ( b->pos - b->pkg->attrs );
     size_t str_attr_len_need = sizeof( radius_attr_hdr_t ) + len;
     if ( str_attr_len_need > remain )
-        return radius_err_mem; 
+        return radius_err_mem;
     return radius_err_ok;
 
 }
@@ -389,7 +389,7 @@ put_str_attr( radius_pkg_builder_t* b, int radius_attr_id, radius_str_t* str ) {
     radius_error_t rc = check_str_attr_range_mem( b, radius_attr_id, str->len );
     if ( rc != radius_err_ok )
         return rc;
-    
+
     radius_attr_hdr_t* ah = (radius_attr_hdr_t*) b->pos;
     ah->type = radius_attr_id;
     ah->len = str->len + sizeof( radius_attr_hdr_t );
@@ -416,7 +416,7 @@ put_addr_attr( radius_pkg_builder_t* b, int radius_attr_id, uint32_t addr ) {
     *v = addr;
     b->pos += sizeof( addr );
 
-    return radius_err_ok; 
+    return radius_err_ok;
 }
 #endif
 
@@ -465,7 +465,7 @@ create_radius_req( void* buff, int buff_size, uint8_t ident, radius_str_t* user,
     make_access_request_pkg( &b, ident, secret, user, passwd, nas_identifier );
 
     update_pkg_len( &b );
-   
+
     return b.pos - (unsigned char*) b.pkg;
 }
 
