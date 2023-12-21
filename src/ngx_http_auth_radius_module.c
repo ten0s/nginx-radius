@@ -86,17 +86,17 @@ ngx_module_t ngx_http_auth_radius_module = {
     NULL,                                   /* init master */
     NULL,                                   /* init module */
 
-#if (NGX_THREADS)
-    NULL,                                   /* init process */
-    ngx_http_auth_radius_init_servers,      /* init thread */
-    ngx_http_auth_radius_destroy_servers,   /* exit thread */
-    NULL,                                   /* exit process */
-#else /* NGX_THREADS */
+//#if (NGX_THREADS)
+//    NULL,                                   /* init process */
+//    ngx_http_auth_radius_init_servers,      /* init thread */
+//    ngx_http_auth_radius_destroy_servers,   /* exit thread */
+//    NULL,                                   /* exit process */
+//#else /* NGX_THREADS */
     ngx_http_auth_radius_init_servers,      /* init process */
     NULL,                                   /* init thread */
     NULL,                                   /* exit thread */
     ngx_http_auth_radius_destroy_servers,   /* exit process */
-#endif /* NGX_THREADS */
+//#endif /* NGX_THREADS */
 
     NULL,                                   /* exit master */
     NGX_MODULE_V1_PADDING
@@ -379,6 +379,7 @@ ngx_http_auth_radius_init( ngx_conf_t *cf )
 
 static ngx_int_t
 ngx_http_auth_radius_init_servers( ngx_cycle_t *cycle) {
+    printf("ngx_http_auth_radius_init_servers\n");
     if (radius_init_servers() == -1) {
         return NGX_ERROR;
     }
