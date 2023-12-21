@@ -15,7 +15,6 @@ typedef struct ngx_http_auth_radius_ctx_t {
 
 typedef struct {
     ngx_str_t                realm;
-    ngx_str_t                radius_cache;
     ngx_log_t*               log;
     ngx_uint_t               radius_timeout;
     ngx_uint_t               radius_attempts;
@@ -58,18 +57,11 @@ static ngx_command_t  ngx_http_auth_radius_commands[] = {
       0,
       NULL },
 
-    { ngx_string( "radius_cache" ),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_CONF_TAKE1,
-      ngx_conf_set_str_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof( ngx_http_auth_radius_main_conf_t, radius_cache ),
-      NULL },
-
     { ngx_string( "auth_radius" ),
       NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
       ngx_http_radius_set_auth_radius,
       0,
-      offsetof( ngx_http_auth_radius_main_conf_t, radius_timeout ),
+      0,
       NULL },
 
     ngx_null_command
@@ -404,7 +396,6 @@ ngx_http_auth_radius_merge_loc_conf( ngx_conf_t *cf, void *parent, void *child )
     ngx_http_auth_radius_main_conf_t *conf = child;
 
     ngx_conf_merge_str_value( conf->realm, prev->realm, "" );
-    ngx_conf_merge_str_value( conf->radius_cache, prev->radius_cache, "" );
 
     ngx_conf_merge_msec_value( conf->radius_timeout, prev->radius_timeout, 60000 );
     ngx_conf_merge_uint_value( conf->radius_attempts, prev->radius_attempts, 3 );
