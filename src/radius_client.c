@@ -105,13 +105,13 @@ radius_add_server( struct sockaddr* sockaddr, socklen_t socklen, radius_str_t* s
 
     rs->magic = RADIUS_SERVER_MAGIC_HDR;
     rs->id = radius_servers->size - 1;
-    rs->s = -1;
+    rs->sockfd = -1;
     rs->sockaddr = sockaddr;
     rs->socklen = socklen;
     rs->secret = *secret;
     rs->nas_identifier = *nas_identifier;
 
-    memset( rs->req_queue, 0, sizeof( rs->req_queue ) );
+    ngx_memset( rs->req_queue, 0, sizeof( rs->req_queue ) );
 
     unsigned int i;
     radius_req_queue_node_t* qn;
@@ -126,17 +126,23 @@ radius_add_server( struct sockaddr* sockaddr, socklen_t socklen, radius_str_t* s
     return rs;
 }
 
-void radius_init_servers() {
+int
+radius_init_servers() {
     uint32_t i;
     radius_server_t *rs;
 
     if (radius_servers == NULL)
-        return;
+        return -1;
 
     for (i = 0; i < radius_servers->size; i++) {
-        rs = (radius_server_t *) s_array_get( radius_servers, i);
-        rs->s = socket( AF_INET, SOCK_DGRAM, 0);
+        rs = (radius_server_t *) s_array_get(radius_servers, i);
+        rs->sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+        if (rs->sockfd == -1) {
+            return -1;
+        }
     }
+
+    return 0;
 }
 
 void radius_destroy_servers() {
@@ -147,10 +153,10 @@ void radius_destroy_servers() {
         return;
 
     for (i = 0; i < radius_servers->size; i++) {
-        rs = (radius_server_t *) s_array_get( radius_servers, i);
-        if (rs->s >= 0) {
-            close(rs->s);
-            rs->s = -1;
+        rs = (radius_server_t *) s_array_get(radius_servers, i);
+        if (rs->sockfd >= 0) {
+            close(rs->sockfd);
+            rs->sockfd = -1;
         }
     }
 
@@ -220,8 +226,8 @@ radius_recv_request( radius_server_t* rs ) {
     struct sockaddr    sockaddr;
     socklen_t          socklen = sizeof( sockaddr );
 
-    ssize_t len = recvfrom( rs->s, rs->process_buff, sizeof( rs->process_buff ), MSG_TRUNC, &sockaddr, &socklen );
-    if ( len < 0 || len > (int) sizeof( rs->process_buff ) ) {
+    ssize_t len = recvfrom(rs->sockfd, rs->process_buff, sizeof(rs->process_buff), MSG_TRUNC, &sockaddr, &socklen);
+    if (len < 0 || len > (int) sizeof(rs->process_buff)) {
         rlog( rs, "radius_recv_request: error recvfrom" );
         return NULL;
     }
@@ -293,10 +299,10 @@ radius_send_request( radius_req_queue_node_t* prev_req, radius_str_t* user, radi
     int len = create_radius_req( rs->process_buff, sizeof( rs->process_buff ),
         n->ident, user, passwd, &rs->secret, &rs->nas_identifier, n->auth );
 
-    int rc = sendto( rs->s, rs->process_buff, len, 0, rs->sockaddr, rs->socklen );
+    int rc = sendto(rs->sockfd, rs->process_buff, len, 0, rs->sockaddr, rs->socklen);
     if ( rc == -1 ) {
         rlog( rs, "radius_send_request: sendto, r: 0x%lx, len: %u, error: %u", n->data,
-            len, errno );
+            len, ngx_errno );
         release_req_queue_node( n );
         return NULL;
     }

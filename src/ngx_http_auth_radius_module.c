@@ -199,18 +199,18 @@ ngx_send_radius_request( ngx_http_request_t *r, radius_req_queue_node_t* prev_re
 
     if ( c == NULL ) {
 
-        c = ngx_get_connection( rs->s, conf->log );
+        c = ngx_get_connection( rs->sockfd, conf->log );
         if ( c == NULL ) {
             ngx_log_error( NGX_LOG_ERR, r->connection->log, 0, "ngx_send_radius_request: ngx_get_connection" );
-            if (ngx_close_socket( rs->s ) == -1)
+            if (ngx_close_socket( rs->sockfd ) == -1)
                 ngx_log_error( NGX_LOG_ERR, r->connection->log, 0, "ngx_send_radius_request: ngx_close_socket" );
             return NGX_ERROR;
         }
 
-        if ( ngx_nonblocking( rs->s ) == -1 ) {
+        if ( ngx_nonblocking( rs->sockfd ) == -1 ) {
             ngx_log_error( NGX_LOG_ERR, r->connection->log, 0, "ngx_send_radius_request: ngx_nonblocking" );
             ngx_free_connection( c );
-            if (ngx_close_socket( rs->s ) == -1)
+            if (ngx_close_socket( rs->sockfd ) == -1)
                 ngx_log_error( NGX_LOG_ERR, r->connection->log, 0, "ngx_send_radius_request: ngx_close_socket" );
             return NGX_ERROR;
         }
@@ -379,8 +379,9 @@ ngx_http_auth_radius_init( ngx_conf_t *cf )
 
 static ngx_int_t
 ngx_http_auth_radius_init_servers( ngx_cycle_t *cycle) {
-    radius_init_servers();
-
+    if (radius_init_servers() == -1) {
+        return NGX_ERROR;
+    }
     return NGX_OK;
 }
 
