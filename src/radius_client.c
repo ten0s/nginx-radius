@@ -13,7 +13,7 @@ typedef struct radius_auth_t {
 
 typedef struct radius_hdr_t {
     uint8_t         code;
-    uint8_t         ident; // DKL: what's this?
+    uint8_t         ident;
     uint16_t        len;
     radius_auth_t   auth;
 } radius_hdr_t;
@@ -29,8 +29,8 @@ typedef struct radius_pkg_t {
 } radius_pkg_t;
 
 typedef struct radius_pkg_builder_t {
-    radius_pkg_t*   pkg;
-    unsigned char*  pos;
+    radius_pkg_t   *pkg;
+    unsigned char  *pos;
 } radius_pkg_builder_t;
 
 static unsigned char
@@ -90,13 +90,13 @@ static radius_attr_desc_t attrs_desc[] = {
     [RADIUS_ATTR_NAS_IDENTIFIER]    { RADIUS_ATTR_DESC_ITEM(radius_attr_type_str, 3, 64) },
 };
 
-radius_server_t*
-radius_add_server(radius_server_t* rs,
+radius_server_t *
+radius_add_server(radius_server_t *rs,
                   int rs_id,
-                  struct sockaddr* sockaddr,
+                  struct sockaddr *sockaddr,
                   socklen_t socklen,
-                  radius_str_t* secret,
-                  radius_str_t* nas_id)
+                  radius_str_t *secret,
+                  radius_str_t *nas_id)
 {
     rs->magic = RADIUS_SERVER_MAGIC_HDR;
     rs->id = rs_id;
@@ -108,7 +108,7 @@ radius_add_server(radius_server_t* rs,
     ngx_memset(rs->req_queue, 0, sizeof(rs->req_queue));
 
     size_t i;
-    radius_req_queue_node_t* rqn;
+    radius_req_queue_node_t *rqn;
     for (i = 1; i < sizeof(rs->req_queue)/sizeof(rs->req_queue[0]); ++i) {
         rqn = &rs->req_queue[i];
         rqn->ident = i;
@@ -121,16 +121,15 @@ radius_add_server(radius_server_t* rs,
 }
 
 int
-radius_init_servers(ngx_array_t* radius_servers)
+radius_init_servers(ngx_array_t *radius_servers)
 {
     size_t i;
-    radius_server_t* rss;
+    radius_server_t *rss;
     radius_server_t *rs;
 
     if (radius_servers == NULL)
         return -1;
 
-    printf("#rss: %lu\n", radius_servers->nelts);
     rss = radius_servers->elts;
     for (i = 0; i < radius_servers->nelts; i++) {
         rs = &rss[i];
@@ -146,7 +145,7 @@ radius_init_servers(ngx_array_t* radius_servers)
 void radius_destroy_servers(ngx_array_t* radius_servers)
 {
     size_t i;
-    radius_server_t* rss;
+    radius_server_t *rss;
     radius_server_t *rs;
 
     if (radius_servers == NULL)
@@ -165,10 +164,10 @@ void radius_destroy_servers(ngx_array_t* radius_servers)
     // should free it automatically
 }
 
-radius_req_queue_node_t*
+radius_req_queue_node_t *
 acquire_req_queue_node(radius_server_t* rs)
 {
-    radius_req_queue_node_t* rqn = rs->req_free_list;
+    radius_req_queue_node_t *rqn = rs->req_free_list;
     if (rqn) {
         rs->req_free_list = rqn->next;
         rqn->active = 1;
@@ -178,18 +177,18 @@ acquire_req_queue_node(radius_server_t* rs)
     return rqn;
 }
 
-radius_server_t*
-get_server_by_req(radius_req_queue_node_t* rqn)
+radius_server_t *
+get_server_by_req(radius_req_queue_node_t *rqn)
 {
-    radius_server_t* rs;
-    radius_req_queue_node_t* base = rqn - rqn->ident;
-    rs = (radius_server_t*) ((char*) base - offsetof(radius_server_t, req_queue));
+    radius_server_t *rs;
+    radius_req_queue_node_t *base = rqn - rqn->ident;
+    rs = (radius_server_t *) ((char *)base - offsetof(radius_server_t, req_queue));
     assert(rs->magic == RADIUS_SERVER_MAGIC_HDR);
     return rs;
 }
 
 void
-rlog(radius_server_t* rs, const char* fmt, ...)
+rlog(radius_server_t *rs, const char *fmt, ...)
 {
     va_list  args;
     va_start(args, fmt);
@@ -201,11 +200,10 @@ rlog(radius_server_t* rs, const char* fmt, ...)
 }
 
 void
-release_req_queue_node(radius_req_queue_node_t* rqn)
+release_req_queue_node(radius_req_queue_node_t *rqn)
 {
-    radius_server_t* rs;
+    radius_server_t *rs;
     rs = get_server_by_req(rqn);
-
     rlog(rs, "release_req_queue_node: 0x%lx, r: 0x%lx", rqn, rqn->data);
 
     rqn->active = 0;
@@ -222,8 +220,8 @@ release_req_queue_node(radius_req_queue_node_t* rqn)
     rs->req_free_list = rs->req_last_list = rqn;
 }
 
-radius_req_queue_node_t*
-radius_recv_request(radius_server_t* rs)
+radius_req_queue_node_t *
+radius_recv_request(radius_server_t *rs)
 {
     struct sockaddr sockaddr;
     socklen_t       socklen = sizeof(sockaddr);
@@ -236,14 +234,14 @@ radius_recv_request(radius_server_t* rs)
         return NULL;
     }
 
-    radius_pkg_t* pkg = (radius_pkg_t*) rs->process_buf;
+    radius_pkg_t *pkg = (radius_pkg_t *) rs->process_buf;
     uint16_t pkg_len = ntohs(pkg->hdr.len);
     if (len != pkg_len) {
         rlog(rs, "radius_recv_request: incorrect pkg len: %d | %d", len, pkg_len);
         return NULL;
     }
 
-    radius_req_queue_node_t* rqn;
+    radius_req_queue_node_t *rqn;
     rqn = &rs->req_queue[pkg->hdr.ident];
     if (rqn->active == 0) {
         rlog(rs, "radius_recv_request: active = 0, 0x%lx, r: 0x%lx", rqn, rqn->data);
@@ -267,20 +265,19 @@ radius_recv_request(radius_server_t* rs)
         return NULL;
     }
 
-//    release_req_queue_node(n);
     rqn->accepted = pkg->hdr.code == RADIUS_CODE_ACCESS_ACCEPT;
     return rqn;
 }
 
-radius_req_queue_node_t*
-radius_send_request(ngx_array_t* radius_servers,
-                    radius_req_queue_node_t* prev_req,
-                    radius_str_t* user,
-                    radius_str_t* passwd,
-                    void* log)
+radius_req_queue_node_t *
+radius_send_request(ngx_array_t * radius_servers,
+                    radius_req_queue_node_t * prev_req,
+                    radius_str_t *user,
+                    radius_str_t *passwd,
+                    void *log)
 {
-    radius_server_t* rss = radius_servers->elts;
-    radius_server_t* rs;
+    radius_server_t *rss = radius_servers->elts;
+    radius_server_t *rs;
 
     if (prev_req == NULL) {
         rs = &rss[0];
@@ -293,7 +290,7 @@ radius_send_request(ngx_array_t* radius_servers,
     if (!rs->log)
         rs->log = log;
 
-    radius_req_queue_node_t* rqn;
+    radius_req_queue_node_t *rqn;
     rqn = acquire_req_queue_node(rs);
     if (rqn == NULL) {
         // TODO: try next server
@@ -322,7 +319,7 @@ radius_send_request(ngx_array_t* radius_servers,
 }
 
 static void
-init_radius_pkg(radius_pkg_builder_t* b, void* buf, int len)
+init_radius_pkg(radius_pkg_builder_t *b, void *buf, int len)
 {
     b->pkg = buf;
     assert(len == RADIUS_PKG_MAX); // TODO
@@ -330,7 +327,7 @@ init_radius_pkg(radius_pkg_builder_t* b, void* buf, int len)
 }
 
 static void
-gen_authenticator(radius_auth_t* auth)
+gen_authenticator(radius_auth_t *auth)
 {
     uint8_t i;
     for(i = 0; i < sizeof(radius_auth_t); i++)
@@ -338,7 +335,7 @@ gen_authenticator(radius_auth_t* auth)
 }
 
 static radius_error_t
-check_str_attr_range_mem(radius_pkg_builder_t* b, int radius_attr_id, uint16_t len)
+check_str_attr_range_mem(radius_pkg_builder_t *b, int radius_attr_id, uint16_t len)
 {
     if (len < attrs_desc[radius_attr_id].len_min
                     || len > attrs_desc[radius_attr_id].len_max)
@@ -352,7 +349,7 @@ check_str_attr_range_mem(radius_pkg_builder_t* b, int radius_attr_id, uint16_t l
 }
 
 static radius_error_t
-put_passwd_crypt(radius_pkg_builder_t* b, radius_str_t* secret, radius_str_t* passwd)
+put_passwd_crypt(radius_pkg_builder_t *b, radius_str_t *secret, radius_str_t *passwd)
 {
     uint8_t pwd_padded_len = 16 * (1 + passwd->len / 16);
     radius_error_t rc = check_str_attr_range_mem(b, RADIUS_ATTR_USER_PASSWORD, pwd_padded_len);
@@ -368,7 +365,7 @@ put_passwd_crypt(radius_pkg_builder_t* b, radius_str_t* secret, radius_str_t* pa
     ctx = s_ctx;
     ngx_md5_update(&ctx, &b->pkg->hdr.auth, sizeof(b->pkg->hdr.auth));
 
-    radius_attr_hdr_t* ah = (radius_attr_hdr_t*) b->pos;
+    radius_attr_hdr_t *ah = (radius_attr_hdr_t *)b->pos;
 
     ah->type = RADIUS_ATTR_USER_PASSWORD;
     b->pos += sizeof(radius_attr_hdr_t);
@@ -377,8 +374,8 @@ put_passwd_crypt(radius_pkg_builder_t* b, radius_str_t* secret, radius_str_t* pa
 
     uint8_t pwd_remain = passwd->len;
     uint8_t pwd_padded_remain = pwd_padded_len;
-    unsigned char* p = passwd->s;
-    unsigned char* c = b->pos;
+    unsigned char *p = passwd->s;
+    unsigned char *c = b->pos;
 
     ah->len = sizeof(radius_attr_hdr_t) + pwd_padded_remain;
 
@@ -404,13 +401,13 @@ put_passwd_crypt(radius_pkg_builder_t* b, radius_str_t* secret, radius_str_t* pa
 }
 
 static int
-put_str_attr(radius_pkg_builder_t* b, int radius_attr_id, radius_str_t* str)
+put_str_attr(radius_pkg_builder_t *b, int radius_attr_id, radius_str_t *str)
 {
     radius_error_t rc = check_str_attr_range_mem(b, radius_attr_id, str->len);
     if (rc != radius_err_ok)
         return rc;
 
-    radius_attr_hdr_t* ah = (radius_attr_hdr_t*) b->pos;
+    radius_attr_hdr_t *ah = (radius_attr_hdr_t *)b->pos;
     ah->type = radius_attr_id;
     ah->len = str->len + sizeof(radius_attr_hdr_t);
     b->pos += sizeof(radius_attr_hdr_t);
@@ -428,11 +425,11 @@ put_addr_attr(radius_pkg_builder_t* b, int radius_attr_id, uint32_t addr)
     if (attr_len_need > remain)
         return radius_err_mem;
 
-    radius_attr_hdr_t* ah = (radius_attr_hdr_t*) b->pos;
+    radius_attr_hdr_t *ah = (radius_attr_hdr_t *)b->pos;
     ah->type = radius_attr_id;
     ah->len = attr_len_need;
     b->pos += sizeof(radius_attr_hdr_t);
-    uint32_t* v = (uint32_t*) b->pos;
+    uint32_t *v = (uint32_t *)b->pos;
     *v = addr;
     b->pos += sizeof(addr);
 
@@ -441,12 +438,12 @@ put_addr_attr(radius_pkg_builder_t* b, int radius_attr_id, uint32_t addr)
 #endif
 
 static radius_error_t
-make_access_request_pkg(radius_pkg_builder_t* b,
+make_access_request_pkg(radius_pkg_builder_t *b,
                         uint8_t ident,
-                        radius_str_t* secret,
-                        radius_str_t* user,
-                        radius_str_t* passwd,
-                        radius_str_t* nas_id)
+                        radius_str_t *secret,
+                        radius_str_t *user,
+                        radius_str_t *passwd,
+                        radius_str_t *nas_id)
 {
     assert(b && user && passwd);
     b->pkg->hdr.code = RADIUS_CODE_ACCESS_REQUEST;
@@ -471,21 +468,21 @@ make_access_request_pkg(radius_pkg_builder_t* b,
 }
 
 static radius_error_t
-update_pkg_len(radius_pkg_builder_t* b)
+update_pkg_len(radius_pkg_builder_t *b)
 {
-    uint16_t l = b->pos - (unsigned char*) &b->pkg->hdr;
+    uint16_t l = b->pos - (unsigned char*)&b->pkg->hdr;
     b->pkg->hdr.len = htons(l);
     return radius_err_ok;
 }
 
 uint16_t
-create_radius_req(void* buf, size_t len,
+create_radius_req(void *buf, size_t len,
                   uint8_t ident,
-                  radius_str_t* user,
-                  radius_str_t* passwd,
-                  radius_str_t* secret,
-                  radius_str_t* nas_id,
-                  unsigned char* auth)
+                  radius_str_t *user,
+                  radius_str_t *passwd,
+                  radius_str_t *secret,
+                  radius_str_t *nas_id,
+                  unsigned char *auth)
 {
     radius_pkg_builder_t b;
 
@@ -497,5 +494,5 @@ create_radius_req(void* buf, size_t len,
 
     update_pkg_len(&b);
 
-    return b.pos - (unsigned char*) b.pkg;
+    return b.pos - (unsigned char *)b.pkg;
 }
