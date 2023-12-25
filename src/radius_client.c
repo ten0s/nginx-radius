@@ -201,8 +201,7 @@ release_req_queue_node(radius_req_queue_node_t *rqn,
     radius_server_t *rs;
     rs = get_server_by_req(rqn, log);
     if (rs == NULL) {
-        LOG_ERR(log, 0,
-                "rs not found, req: 0x%xl, r: 0x%xl", rqn, r);
+        LOG_ERR(log, 0, "rs not found, req: 0x%xl, r: 0x%xl", rqn, r);
         return;
     }
 
@@ -240,16 +239,14 @@ radius_recv_request(radius_server_t *rs, ngx_log_t *log)
     radius_pkg_t *pkg = (radius_pkg_t *) rs->process_buf;
     uint16_t pkg_len = ntohs(pkg->hdr.len);
     if (len != pkg_len) {
-        LOG_ERR(log, 0,
-                "incorrect pkg len: %d | %d", len, pkg_len);
+        LOG_ERR(log, 0, "incorrect pkg len: %d | %d", len, pkg_len);
         return NULL;
     }
 
     radius_req_queue_node_t *rqn;
     rqn = &rs->req_queue[pkg->hdr.ident];
     if (rqn->active == 0) {
-        LOG_ERR(log, 0,
-                "active = 0, 0x%xl, r: 0x%xl", rqn, rqn->data);
+        LOG_ERR(log, 0, "active = 0, 0x%xl, r: 0x%xl", rqn, rqn->data);
         return NULL;
     }
 
@@ -266,8 +263,7 @@ radius_recv_request(radius_server_t *rs, ngx_log_t *log)
     ngx_md5_final(check, &ctx);
 
     if (ngx_memcmp(save_auth, check, sizeof(save_auth)) != 0) {
-        LOG_ERR(log, 0,
-                "incorrect auth, r: 0x%xl", rqn->data);
+        LOG_ERR(log, 0, "incorrect auth, r: 0x%xl", rqn->data);
         return NULL;
     }
 

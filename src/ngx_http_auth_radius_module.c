@@ -255,14 +255,12 @@ ngx_http_auth_radius_send_radius_request(ngx_http_request_t *r,
         // Get connection around socket
         c = ngx_get_connection(rs->sockfd, log);
         if (c == NULL) {
-            LOG_ERR(log, ngx_errno,
-                    "ngx_get_connection failed r: 0x%xl", r);
+            LOG_ERR(log, ngx_errno, "ngx_get_connection failed r: 0x%xl", r);
             return NGX_ERROR;
         }
 
         if (ngx_nonblocking(rs->sockfd) == -1) {
-            LOG_ERR(log, ngx_errno,
-                    "ngx_nonblocking r: 0x%xl", r);
+            LOG_ERR(log, ngx_errno, "ngx_nonblocking r: 0x%xl", r);
             ngx_free_connection(c);
             return NGX_ERROR;
         }
@@ -272,8 +270,7 @@ ngx_http_auth_radius_send_radius_request(ngx_http_request_t *r,
 
         // Subscribe to read data event
         if (ngx_add_event(c->read, NGX_READ_EVENT, NGX_LEVEL_EVENT) != NGX_OK) {
-            LOG_ERR(log, ngx_errno,
-                    "ngx_add_event failed r: 0x%xl", r);
+            LOG_ERR(log, ngx_errno, "ngx_add_event failed r: 0x%xl", r);
             return NGX_ERROR;
         }
 
@@ -348,8 +345,7 @@ ngx_http_auth_radius_handler(ngx_http_request_t *r)
 
         ctx = ngx_pcalloc(r->pool, sizeof(*ctx));
         if (ctx == NULL) {
-            LOG_ERR(log, ngx_errno,
-                    "nx_pcalloc failed r: 0x%xl", r);
+            LOG_ERR(log, ngx_errno, "nx_pcalloc failed r: 0x%xl", r);
             return NGX_ERROR;
         }
 
@@ -459,7 +455,7 @@ ngx_http_auth_radius_create_loc_conf(ngx_conf_t *cf)
     ngx_http_auth_radius_loc_conf_t *lcf;
     lcf = ngx_pcalloc(cf->pool, sizeof(ngx_http_auth_radius_loc_conf_t));
     if (lcf == NULL) {
-        CONF_LOG_EMERG(cf, ngx_errno, "nx_pcalloc failed");
+        CONF_LOG_EMERG(cf, ngx_errno, "nx_pcalloc failed" );
         return NGX_CONF_ERROR;
     }
 
