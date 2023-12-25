@@ -1,7 +1,7 @@
-#include <ngx_md5.h>
 #include <assert.h>
-#include <stdint.h>
-#include <stddef.h>
+#include <ngx_http.h>
+#include <ngx_md5.h>
+#include "logger.h"
 #include "radius_client.h"
 
 #define RADIUS_PKG_MAX  4096
@@ -165,7 +165,8 @@ void radius_destroy_servers(ngx_array_t* radius_servers)
 }
 
 radius_req_queue_node_t *
-acquire_req_queue_node(radius_server_t* rs)
+acquire_req_queue_node(radius_server_t* rs,
+                       ngx_log_t *log)
 {
     radius_req_queue_node_t *rqn = rs->req_free_list;
     if (rqn) {
@@ -178,33 +179,35 @@ acquire_req_queue_node(radius_server_t* rs)
 }
 
 radius_server_t *
-get_server_by_req(radius_req_queue_node_t *rqn)
+get_server_by_req(radius_req_queue_node_t *rqn,
+                  ngx_log_t *log)
 {
     radius_server_t *rs;
     radius_req_queue_node_t *base = rqn - rqn->ident;
     rs = (radius_server_t *) ((char *)base - offsetof(radius_server_t, req_queue));
-    assert(rs->magic == RADIUS_SERVER_MAGIC_HDR);
+    if (rs->magic != RADIUS_SERVER_MAGIC_HDR) {
+        LOG_EMERG(log, 0, "%s: invalid magic hdr", __FUNCTION__);
+        abort();
+    }
     return rs;
 }
 
 void
-rlog(radius_server_t *rs, const char *fmt, ...)
+release_req_queue_node(radius_req_queue_node_t *rqn,
+                       ngx_log_t *log)
 {
-    va_list  args;
-    va_start(args, fmt);
-    char buf[0x4000];
-    vsnprintf(buf, sizeof(buf), fmt, args);
-    if (rs->logger)
-        rs->logger(rs->log, buf);
-    va_end(args);
-}
+    ngx_http_request_t *r = rqn->data;
 
-void
-release_req_queue_node(radius_req_queue_node_t *rqn)
-{
     radius_server_t *rs;
-    rs = get_server_by_req(rqn);
-    rlog(rs, "release_req_queue_node: 0x%lx, r: 0x%lx", rqn, rqn->data);
+    rs = get_server_by_req(rqn, log);
+    if (rs == NULL) {
+        LOG_ERR(log, 0, "%s: rs not found, req: 0x%xl, r: 0x%xl",
+                __FUNCTION__, rqn, r);
+        return;
+    }
+
+    LOG_DEBUG(log, "%s: req: 0x%xl, r: 0x%xl",
+              __FUNCTION__, rqn, r);
 
     rqn->active = 0;
     rqn->next = NULL;
@@ -216,12 +219,13 @@ release_req_queue_node(radius_req_queue_node_t *rqn)
         return;
     }
 
-    assert(rs->req_free_list == rs->req_last_list && rs->req_free_list == NULL);
+    assert(rs->req_free_list == rs->req_last_list &&
+           rs->req_free_list == NULL);
     rs->req_free_list = rs->req_last_list = rqn;
 }
 
 radius_req_queue_node_t *
-radius_recv_request(radius_server_t *rs)
+radius_recv_request(radius_server_t *rs, ngx_log_t *log)
 {
     struct sockaddr sockaddr;
     socklen_t       socklen = sizeof(sockaddr);
@@ -230,21 +234,25 @@ radius_recv_request(radius_server_t *rs)
                            rs->process_buf, sizeof(rs->process_buf),
                            MSG_TRUNC, &sockaddr, &socklen);
     if (len < 0 || len > (int) sizeof(rs->process_buf)) {
-        rlog(rs, "radius_recv_request: error recvfrom");
+        LOG_ERR(log, ngx_errno, "%s: recvfrom failed", __FUNCTION__);
         return NULL;
     }
 
     radius_pkg_t *pkg = (radius_pkg_t *) rs->process_buf;
     uint16_t pkg_len = ntohs(pkg->hdr.len);
     if (len != pkg_len) {
-        rlog(rs, "radius_recv_request: incorrect pkg len: %d | %d", len, pkg_len);
+        LOG_ERR(log, 0,
+                "%s: incorrect pkg len: %d | %d",
+                __FUNCTION__, len, pkg_len);
         return NULL;
     }
 
     radius_req_queue_node_t *rqn;
     rqn = &rs->req_queue[pkg->hdr.ident];
     if (rqn->active == 0) {
-        rlog(rs, "radius_recv_request: active = 0, 0x%lx, r: 0x%lx", rqn, rqn->data);
+        LOG_ERR(log, 0,
+                "%s: active = 0, 0x%xl, r: 0x%xl",
+                __FUNCTION__, rqn, rqn->data);
         return NULL;
     }
 
@@ -260,8 +268,10 @@ radius_recv_request(radius_server_t *rs)
     ngx_md5_update(&ctx, rs->secret.s, rs->secret.len);
     ngx_md5_final(check, &ctx);
 
-    if(0 != ngx_memcmp(save_auth, check, sizeof(save_auth))) {
-        rlog(rs, "radius_recv_request: incorrect auth, r: 0x%lx", rqn->data);
+    if (ngx_memcmp(save_auth, check, sizeof(save_auth)) != 0) {
+        LOG_ERR(log, 0,
+                "%s: incorrect auth, r: 0x%xl",
+                __FUNCTION__, rqn->data);
         return NULL;
     }
 
@@ -274,7 +284,7 @@ radius_send_request(ngx_array_t * radius_servers,
                     radius_req_queue_node_t * prev_req,
                     radius_str_t *user,
                     radius_str_t *passwd,
-                    void *log)
+                    ngx_log_t *log)
 {
     radius_server_t *rss = radius_servers->elts;
     radius_server_t *rs;
@@ -282,24 +292,22 @@ radius_send_request(ngx_array_t * radius_servers,
     if (prev_req == NULL) {
         rs = &rss[0];
     } else {
-        rs = get_server_by_req(prev_req);
+        rs = get_server_by_req(prev_req, log);
         rs = &rss[(rs->id + 1) % radius_servers->nelts];
-        release_req_queue_node(prev_req);
+        release_req_queue_node(prev_req, log);
     }
-
-    if (!rs->log)
-        rs->log = log;
 
     radius_req_queue_node_t *rqn;
-    rqn = acquire_req_queue_node(rs);
+    rqn = acquire_req_queue_node(rs, log);
     if (rqn == NULL) {
-        // TODO: try next server
-        // DKL: what if there's no next server
-        abort();
+        LOG_ERR(log, 0, "%s: no req", __FUNCTION__);
+        // TODO: try next server?
+        return NULL;
     }
 
-    rlog(rs, "acquire_req_queue_node: #rss: %lu, fd: %d, 0x%lx, r: 0x%lx",
-         radius_servers->nelts, rs->sockfd, rqn, rqn->data);
+    LOG_DEBUG(log,
+              "%s: fd: %d, req: 0x%xl, r: 0x%xl",
+              __FUNCTION__, rs->sockfd, rqn, rqn->data);
 
     int len = create_radius_req(rs->process_buf, sizeof(rs->process_buf),
                                 rqn->ident, user, passwd,
@@ -309,9 +317,10 @@ radius_send_request(ngx_array_t * radius_servers,
                     rs->process_buf, len,
                     0, rs->sockaddr, rs->socklen);
     if (rc == -1) {
-        rlog(rs, "radius_send_request: sendto, fd: %d, r: 0x%lx, len: %u, error: %u",
-             rs->sockfd, rqn->data, len, ngx_errno);
-        release_req_queue_node(rqn);
+        LOG_ERR(log, ngx_errno,
+                "%s: sendto failed, fd: %d, r: 0x%xl, len: %u",
+                __FUNCTION__, rs->sockfd, rqn->data, len);
+        release_req_queue_node(rqn, log);
         return NULL;
     }
 

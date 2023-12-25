@@ -1,9 +1,21 @@
+#include <assert.h>
 #include <ngx_config.h>
 #include <ngx_core.h>
 #include <ngx_http.h>
 #include <ngx_md5.h>
-#include <ctype.h>
+#include "logger.h"
 #include "radius_client.h"
+
+typedef struct {
+    ngx_array_t             *servers;
+    ngx_msec_t               timeout;
+    ngx_uint_t               attempts;
+    radius_str_t             secret;
+} ngx_http_auth_radius_main_conf_t;
+
+typedef struct {
+    ngx_str_t                realm;
+} ngx_http_auth_radius_loc_conf_t;
 
 typedef struct ngx_http_auth_radius_ctx_t {
     u_char                   digest[32];
@@ -13,14 +25,6 @@ typedef struct ngx_http_auth_radius_ctx_t {
     uint8_t                  accepted:1;
     uint8_t                  timedout:1;
 } ngx_http_auth_radius_ctx_t;
-
-typedef struct {
-    ngx_array_t             *servers;
-    ngx_str_t                realm;
-    ngx_msec_t               timeout;
-    ngx_uint_t               attempts;
-    radius_str_t             secret;
-} ngx_http_auth_radius_main_conf_t;
 
 static void *
 ngx_http_auth_radius_create_main_conf(ngx_conf_t *cf);
@@ -131,33 +135,33 @@ ngx_module_t ngx_http_auth_radius_module = {
 #define RADIUS_STR_FROM_NGX_STR_INITIALIZER(ns) .len = ns.len, .s = ns.data
 
 static void
-radius_logger(void *log, const char *fmt)
-{
-    ngx_uint_t level = 0;
-    ngx_err_t err = 0;
-    ngx_log_error_core(level, log, err, fmt, NULL);
-}
-
-static void
 radius_read_handler(ngx_event_t *rev)
 {
-    ngx_connection_t *c = rev->data;
     ngx_log_t *log = rev->log;
+    assert(log != NULL);
+
+    ngx_connection_t *c = rev->data;
     radius_req_queue_node_t *rqn = c->data;
     ngx_http_request_t *r = rqn->data;
 
     ngx_http_auth_radius_ctx_t *ctx;
     ctx = ngx_http_get_module_ctx(r, ngx_http_auth_radius_module);
-    if (ctx == NULL || ctx->rqn != rqn) {
-        ngx_log_error(NGX_LOG_ERR, log, 0, "radius_read_handler: GONE 1");
+    if (ctx == NULL) {
+        LOG_EMERG(log, 0, "%s: ctx not found", __FUNCTION__);
         return;
+    }
+
+    if (ctx->rqn != rqn) {
+        LOG_ERR(log, 0, "%s: ctx->rqn != rqn", __FUNCTION__);
+        // TODO: should return or not?
+        //return;
     }
 
     if (rev->timedout) {
         rev->timedout = 0;
         ctx->attempts--;
-        ngx_log_error(NGX_LOG_ERR, log, 0,
-                      "http_req_read_handler: timeout 0x%xd, attempt: %d", r, ctx->attempts);
+        LOG_DEBUG(log, "%s: timeout 0x%xl, attempt: %d",
+                  __FUNCTION__, r, ctx->attempts);
 
         if (!ctx->attempts) {
             ctx->done = 1;
@@ -177,21 +181,21 @@ radius_read_handler(ngx_event_t *rev)
         ngx_del_timer(rev);
     }
 
-    radius_server_t *rs = get_server_by_req(rqn);
-    radius_req_queue_node_t *rqn2 = radius_recv_request(rs);
+    radius_server_t *rs = get_server_by_req(rqn, log);
+    radius_req_queue_node_t *rqn2 = radius_recv_request(rs, log);
     if (rqn2 == NULL) {
-        // not found TODO
-        ngx_log_error(NGX_LOG_ERR, log, 0, "radius_read_handler: request not found");
+        LOG_ERR(log, 0, "%s: req not found", __FUNCTION__);
         return;
     }
 
     if (rqn != rqn2) {
-        // not found TODO
-        ngx_log_error(NGX_LOG_ERR, log, 0, "radius_read_handler: request not found 2");
+        LOG_ERR(log, 0, "%s: req doesn't match", __FUNCTION__);
         return;
     }
 
-    ngx_log_error(NGX_LOG_ERR, log, 0, "radius_read_handler: rs: %d, 0x%xl, 0x%xl, id: %d, acc: %d", rs->id, r, rqn, rqn->ident, rqn->accepted);
+    LOG_DEBUG(log,
+              "%s: rs_id: %d, r: 0x%xl, req: 0x%xl, req_id: %d, acc: %d",
+              __FUNCTION__, rs->id, r, rqn, rqn->ident, rqn->accepted);
 
     ctx->done = 1;
     ctx->accepted = rqn->accepted;
@@ -199,7 +203,7 @@ radius_read_handler(ngx_event_t *rev)
     // Post RADIUS Auth done event
     ngx_post_event(r->connection->write, &ngx_posted_events);
 
-    release_req_queue_node(rqn);
+    release_req_queue_node(rqn, log);
 }
 
 static ngx_int_t
@@ -208,7 +212,7 @@ ngx_http_auth_radius_send_radius_request(ngx_http_request_t *r,
 {
     ngx_log_t *log = r->connection->log;
 
-    ngx_log_error(NGX_LOG_ERR, log, 0, "ngx_http_auth_send_radius_request 0x%xl", r);
+    LOG_INFO(log, "%s: r: 0x%xl", __FUNCTION__, r);
 
     ngx_http_auth_radius_main_conf_t *mcf;
     mcf = ngx_http_get_module_main_conf(r, ngx_http_auth_radius_module);
@@ -217,8 +221,7 @@ ngx_http_auth_radius_send_radius_request(ngx_http_request_t *r,
     ctx = ngx_http_get_module_ctx(r, ngx_http_auth_radius_module);
 
     if (ctx == NULL) {
-        // TODO: contex must be set
-        // LOG
+        LOG_EMERG(log, 0, "%s: ctx not found", __FUNCTION__);
         return NGX_ERROR;
     }
 
@@ -236,32 +239,30 @@ ngx_http_auth_radius_send_radius_request(ngx_http_request_t *r,
                               &user, &passwd,
                               log);
     if (rqn == NULL) {
-        // TODO: log
+        LOG_ERR(log, 0, "%s: rqn not found r: 0x%xl", __FUNCTION__, r);
         return NGX_ERROR;
     }
 
     // DKL: what's going on here
-    radius_server_t *rs;
-    rs = get_server_by_req(rqn);
-    ngx_log_error(NGX_LOG_ERR, log, 0,
-                  "ngx_http_auth_send_radius_request rs: %d, "
-                  "assign 0x%xl to 0x%xl, id: %d",
-                  rs->id, r, rqn, rqn->ident);
+    radius_server_t *rs = get_server_by_req(rqn, log);
+    LOG_DEBUG(log,
+            "%s: rs id: %d, "
+            "assign 0x%xl to 0x%xl, req id: %d",
+            __FUNCTION__, rs->id, r, rqn, rqn->ident);
 
     ngx_connection_t *c = rs->data;
     if (c == NULL) {
         // Get connection around socket
         c = ngx_get_connection(rs->sockfd, log);
         if (c == NULL) {
-            ngx_log_error(NGX_LOG_ERR, log, 0,
-                          "ngx_http_auth_send_radius_request: ngx_get_connection");
+            LOG_ERR(log, ngx_errno,
+                    "%s: ngx_get_connection failed r: 0x%xl", __FUNCTION__, r);
             return NGX_ERROR;
         }
 
         if (ngx_nonblocking(rs->sockfd) == -1) {
-            ngx_log_error(NGX_LOG_ERR, log, 0,
-                          "ngx_http_auth_send_radius_request: ngx_nonblocking");
-
+            LOG_ERR(log, ngx_errno,
+                    "%s: ngx_nonblocking r: 0x%xl", __FUNCTION__, r);
             ngx_free_connection(c);
             return NGX_ERROR;
         }
@@ -271,8 +272,8 @@ ngx_http_auth_radius_send_radius_request(ngx_http_request_t *r,
 
         // Subscribe to read data event
         if (ngx_add_event(c->read, NGX_READ_EVENT, NGX_LEVEL_EVENT) != NGX_OK) {
-            ngx_log_error(NGX_LOG_ERR, log, 0,
-                          "ngx_http_auth_send_radius_request: ngx_add_event");
+            LOG_ERR(log, ngx_errno,
+                    "%s: ngx_add_event failed r: 0x%xl", __FUNCTION__, r);
             return NGX_ERROR;
         }
 
@@ -285,8 +286,7 @@ ngx_http_auth_radius_send_radius_request(ngx_http_request_t *r,
 
     ngx_event_t *rev = c->read;
     rev->handler = radius_read_handler;
-    rev->log = log; // NB: changing to mcf->log
-    rs->log = log;  // segfaults the worker
+    rev->log = log;
 
     // Subscribe to read timeout event
     ngx_add_timer(rev, mcf->timeout);
@@ -319,7 +319,7 @@ ngx_http_auth_radius_handler(ngx_http_request_t *r)
     ngx_http_auth_radius_main_conf_t *mcf;
     mcf = ngx_http_get_module_main_conf(r, ngx_http_auth_radius_module);
 
-    ngx_http_auth_radius_main_conf_t *lcf;
+    ngx_http_auth_radius_loc_conf_t *lcf;
     lcf = ngx_http_get_module_loc_conf(r, ngx_http_auth_radius_module);
 
     if (lcf->realm.data == NULL || lcf->realm.len == 0) {
@@ -332,6 +332,7 @@ ngx_http_auth_radius_handler(ngx_http_request_t *r)
 
     if (ctx == NULL) {
         // No RADIUS Auth request sent yet
+        LOG_INFO(log, "%s: started r: 0x%xl", __FUNCTION__, r);
 
         // Parse credentials
         ngx_int_t rc = ngx_http_auth_basic_user(r);
@@ -340,14 +341,16 @@ ngx_http_auth_radius_handler(ngx_http_request_t *r)
             return NGX_HTTP_INTERNAL_SERVER_ERROR;
 
         if (rc == NGX_DECLINED) {
-            return ngx_http_auth_radius_set_realm(r, &mcf->realm);
+            return ngx_http_auth_radius_set_realm(r, &lcf->realm);
         }
 
         // TODO: move to _send_radius_request?
 
         ctx = ngx_pcalloc(r->pool, sizeof(*ctx));
         if (ctx == NULL) {
-            // TODO log
+            LOG_ERR(log, ngx_errno,
+                    "%s: nx_pcalloc failed r: 0x%xl",
+                    __FUNCTION__, r);
             return NGX_ERROR;
         }
 
@@ -361,21 +364,21 @@ ngx_http_auth_radius_handler(ngx_http_request_t *r)
     }
 
     if (!ctx->done) {
-        ngx_log_error(NGX_LOG_ERR, log, 0, "Not done r: 0x%xl", r);
+        LOG_INFO(log, "%s: not done r: 0x%xl", __FUNCTION__, r);
         return NGX_AGAIN;
     }
 
     if (!ctx->accepted) {
         if (ctx->timedout) {
-            ngx_log_error(NGX_LOG_ERR, log, 0, "Timedout r: 0x%xl", r);
+            LOG_INFO(log, "%s: timedout r: 0x%xl", __FUNCTION__, r);
             return NGX_HTTP_SERVICE_UNAVAILABLE;
         } else {
-            ngx_log_error(NGX_LOG_ERR, log, 0, "Rejected r: 0x%xl", r);
-            return ngx_http_auth_radius_set_realm(r, &mcf->realm);
+            LOG_INFO(log, "%s: rejected r: 0x%xl", __FUNCTION__, r);
+            return ngx_http_auth_radius_set_realm(r, &lcf->realm);
         }
     }
 
-    ngx_log_error(NGX_LOG_ERR, log, 0, "Accepted r: 0x%xl", r);
+    LOG_INFO(log, "%s: accepted r: 0x%xl", __FUNCTION__, r);
     return NGX_OK;
 }
 
@@ -389,6 +392,7 @@ ngx_http_auth_radius_init(ngx_conf_t *cf)
 
     h = ngx_array_push(&cmcf->phases[NGX_HTTP_ACCESS_PHASE].handlers);
     if (h == NULL) {
+        CONF_LOG_EMERG(cf, ngx_errno, "nomem for ngx_array_push");
         return NGX_ERROR;
     }
 
@@ -427,37 +431,6 @@ ngx_http_auth_radius_destroy_servers(ngx_cycle_t *cycle)
     radius_destroy_servers(mcf->servers);
 }
 
-static char*
-ngx_http_auth_radius_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
-{
-    ngx_http_auth_radius_main_conf_t *prev = parent;
-    ngx_http_auth_radius_main_conf_t *conf = child;
-
-    ngx_conf_merge_str_value(conf->realm, prev->realm, "");
-
-    ngx_conf_merge_msec_value(conf->timeout, prev->timeout, 60000);
-    ngx_conf_merge_uint_value(conf->attempts, prev->attempts, 3);
-
-    return NGX_CONF_OK;
-}
-
-static void *
-ngx_http_auth_radius_create_loc_conf(ngx_conf_t *cf)
-{
-    ngx_http_auth_radius_main_conf_t *mcf;
-    mcf = ngx_pcalloc(cf->pool, sizeof(ngx_http_auth_radius_main_conf_t));
-    if (mcf == NULL) {
-        return NGX_CONF_ERROR;
-    }
-
-    mcf->servers = NULL;
-    mcf->realm.data = NULL;
-    mcf->attempts = NGX_CONF_UNSET;
-    mcf->timeout = NGX_CONF_UNSET_MSEC;
-
-    return mcf;
-}
-
 static void *
 ngx_http_auth_radius_create_main_conf(ngx_conf_t *cf)
 {
@@ -465,19 +438,52 @@ ngx_http_auth_radius_create_main_conf(ngx_conf_t *cf)
 
     mcf = ngx_pcalloc(cf->pool, sizeof(ngx_http_auth_radius_main_conf_t));
     if (mcf == NULL) {
+        CONF_LOG_EMERG(cf, ngx_errno,
+                       "%s: nx_pcalloc failed",
+                       __FUNCTION__);
         return NGX_CONF_ERROR;
     }
 
     mcf->servers = ngx_array_create(cf->pool, 5, sizeof(radius_server_t));
     if (mcf->servers == NULL) {
+        CONF_LOG_EMERG(cf, ngx_errno,
+                       "%s: nx_array_create failed",
+                       __FUNCTION__);
         return NGX_CONF_ERROR;
     }
 
-    mcf->realm.data = NULL;
     mcf->attempts = NGX_CONF_UNSET;
     mcf->timeout = NGX_CONF_UNSET_MSEC;
 
     return mcf;
+}
+
+static void *
+ngx_http_auth_radius_create_loc_conf(ngx_conf_t *cf)
+{
+    ngx_http_auth_radius_loc_conf_t *lcf;
+    lcf = ngx_pcalloc(cf->pool, sizeof(ngx_http_auth_radius_loc_conf_t));
+    if (lcf == NULL) {
+        CONF_LOG_EMERG(cf, ngx_errno,
+                       "%s: nx_pcalloc failed",
+                       __FUNCTION__);
+        return NGX_CONF_ERROR;
+    }
+
+    lcf->realm.data = NULL;
+
+    return lcf;
+}
+
+static char*
+ngx_http_auth_radius_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
+{
+    //ngx_http_auth_radius_main_conf_t *prev = parent;
+    //ngx_http_auth_radius_loc_conf_t *conf = child;
+
+    //ngx_conf_merge_str_value(conf->realm, prev->realm, "");
+
+    return NGX_CONF_OK;
 }
 
 static char *
@@ -488,9 +494,9 @@ ngx_http_auth_radius_set_radius_server(ngx_conf_t *cf,
     ngx_str_t *value = cf->args->elts;
 
     if (cf->args->nelts != 3 && cf->args->nelts != 4) {
-        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-                           "invalid \"%V\" config",
-                           &value[0]);
+        CONF_LOG_EMERG(cf, 0,
+                       "invalid \"%V\" config",
+                       &value[0]);
         return NGX_CONF_ERROR;
     }
 
@@ -504,9 +510,9 @@ ngx_http_auth_radius_set_radius_server(ngx_conf_t *cf,
     u.default_port = RADIUS_DEFAULT_PORT;
     if (ngx_parse_url(cf->pool, &u) != NGX_OK) {
         if (u.err) {
-            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-                               "invalid \"%V\" \"url\" value: \"%V\"",
-                               &value[0], &value[1]);
+            CONF_LOG_EMERG(cf, ngx_errno,
+                           "invalid \"%V\" \"url\" value: \"%V\"",
+                           &value[0], &value[1]);
         }
         return NGX_CONF_ERROR;
     }
@@ -529,9 +535,9 @@ ngx_http_auth_radius_set_radius_server(ngx_conf_t *cf,
 
     radius_server_t *rs = ngx_array_push(mcf->servers);
     if (rs == NULL) {
-        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-                           "\"%V\" no enough memory",
-                           &value[0]);
+        CONF_LOG_EMERG(cf, ngx_errno,
+                       "\"%V\" nomem",
+                       &value[0]);
         return NGX_CONF_ERROR;
     }
 
@@ -539,7 +545,6 @@ ngx_http_auth_radius_set_radius_server(ngx_conf_t *cf,
     radius_add_server(rs, rs_id,
                       u.addrs[0].sockaddr, u.addrs[0].socklen,
                       &secret, &nas_id);
-    rs->logger = radius_logger;
 
     return NGX_CONF_OK;
 }
@@ -556,9 +561,9 @@ ngx_http_auth_radius_set_radius_timeout(ngx_conf_t *cf,
 
     ngx_int_t timeout = ngx_parse_time(&value[1], 0);
     if (timeout == NGX_ERROR) {
-        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-                           "invalid \"radius_timeout\" value: \"%V\"",
-                           &value[1]);
+        CONF_LOG_EMERG(cf, ngx_errno,
+                       "invalid \"radius_timeout\" value: \"%V\"",
+                       &value[1]);
         return NGX_CONF_ERROR;
     }
     mcf->timeout = timeout;
@@ -578,9 +583,9 @@ ngx_http_auth_radius_set_radius_attempts(ngx_conf_t *cf,
 
     ngx_int_t attempts = ngx_atoi(value[1].data, value[1].len);
     if (attempts == NGX_ERROR) {
-        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-                           "invalid \"radius_attempts\" value: \"%V\"",
-                           &value[1]);
+        CONF_LOG_EMERG(cf, ngx_errno,
+                       "invalid \"radius_attempts\" value: \"%V\"",
+                       &value[1]);
         return NGX_CONF_ERROR;
     }
     mcf->attempts = attempts;
@@ -599,10 +604,10 @@ ngx_http_auth_radius_set_auth_radius(ngx_conf_t *cf,
         return NGX_CONF_OK;
     }
 
-    ngx_http_auth_radius_main_conf_t *mcf =
+    ngx_http_auth_radius_loc_conf_t *lcf =
         ngx_http_conf_get_module_loc_conf(cf, ngx_http_auth_radius_module);
 
-    mcf->realm = value[1];
+    lcf->realm = value[1];
 
     return NGX_CONF_OK;
 }
