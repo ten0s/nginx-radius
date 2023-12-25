@@ -120,44 +120,84 @@ radius_add_server(radius_server_t *rs,
     return rs;
 }
 
-int
-radius_init_servers(ngx_array_t *radius_servers)
+ngx_int_t
+radius_init_servers(ngx_array_t *radius_servers, ngx_log_t *log)
 {
     size_t i;
     radius_server_t *rss;
     radius_server_t *rs;
 
-    if (radius_servers == NULL)
-        return -1;
-
-    rss = radius_servers->elts;
-    for (i = 0; i < radius_servers->nelts; i++) {
-        rs = &rss[i];
-        rs->sockfd = ngx_socket(AF_INET, SOCK_DGRAM, 0);
-        if (rs->sockfd == -1) {
-            return -1;
-        }
+    if (radius_servers == NULL) {
+        LOG_EMERG(log, 0, "no radius_servers");
+        return NGX_ERROR;
     }
 
-    return 0;
+    rss = radius_servers->elts;
+    for (i = 0; i < radius_servers->nelts; i++) {
+        rs = &rss[i];
+        int sockfd = ngx_socket(AF_INET, SOCK_DGRAM, 0);
+        if (sockfd == -1) {
+            LOG_ERR(log, ngx_errno, "ngx_socket failed");
+            return NGX_ERROR;
+        }
+
+        // Get connection around socket
+        ngx_connection_t *c = ngx_get_connection(sockfd, log);
+        if (c == NULL) {
+            LOG_ERR(log, ngx_errno,
+                    "ngx_get_connection failed, sockfd: %d", sockfd);
+            ngx_close_socket(sockfd);
+            return NGX_ERROR;
+        }
+
+        if (ngx_nonblocking(sockfd) == -1) {
+            LOG_ERR(log, ngx_errno,
+                    "ngx_nonblocking failed, sockfd: %d", sockfd);
+            ngx_free_connection(c);
+            ngx_close_socket(sockfd);
+            return NGX_ERROR;
+        }
+
+        // Subscribe to read data event
+        if (ngx_add_event(c->read, NGX_READ_EVENT, NGX_LEVEL_EVENT) != NGX_OK) {
+            LOG_ERR(log, ngx_errno,
+                    "ngx_add_event failed, sockfd: %d", sockfd);
+            ngx_free_connection(c);
+            ngx_close_socket(sockfd);
+            return NGX_ERROR;
+        }
+
+        rs->sockfd = sockfd;
+        rs->data = c;
+        c->number = ngx_atomic_fetch_add(ngx_connection_counter, 1);
+    }
+
+    return NGX_OK;
 }
 
-void radius_destroy_servers(ngx_array_t* radius_servers)
+void radius_destroy_servers(ngx_array_t* radius_servers, ngx_log_t *log)
 {
     size_t i;
     radius_server_t *rss;
     radius_server_t *rs;
 
-    if (radius_servers == NULL)
+    if (radius_servers == NULL) {
+        LOG_EMERG(log, 0, "no radius_servers");
         return;
+    }
 
     rss = radius_servers->elts;
     for (i = 0; i < radius_servers->nelts; i++) {
         rs = &rss[i];
-        if (rs->sockfd >= 0) {
-            ngx_close_socket(rs->sockfd);
-            rs->sockfd = -1;
-        }
+        ngx_connection_t *c = rs->data;
+        int sockfd = rs->sockfd;
+
+        ngx_del_event(c->read, NGX_READ_EVENT, NGX_LEVEL_EVENT);
+        ngx_free_connection(c); // TODO: ngx_close_connection?
+        ngx_close_socket(sockfd);
+
+        rs->sockfd = -1;
+        rs->data = NULL;
     }
 
     // No need to free the array, since the pool
@@ -165,8 +205,7 @@ void radius_destroy_servers(ngx_array_t* radius_servers)
 }
 
 radius_req_queue_node_t *
-acquire_req_queue_node(radius_server_t* rs,
-                       ngx_log_t *log)
+acquire_req_queue_node(radius_server_t* rs, ngx_log_t *log)
 {
     radius_req_queue_node_t *rqn = rs->req_free_list;
     if (rqn) {
@@ -179,8 +218,7 @@ acquire_req_queue_node(radius_server_t* rs,
 }
 
 radius_server_t *
-get_server_by_req(radius_req_queue_node_t *rqn,
-                  ngx_log_t *log)
+get_server_by_req(radius_req_queue_node_t *rqn, ngx_log_t *log)
 {
     radius_server_t *rs;
     radius_req_queue_node_t *base = rqn - rqn->ident;
@@ -193,19 +231,19 @@ get_server_by_req(radius_req_queue_node_t *rqn,
 }
 
 void
-release_req_queue_node(radius_req_queue_node_t *rqn,
-                       ngx_log_t *log)
+release_req_queue_node(radius_req_queue_node_t *rqn, ngx_log_t *log)
 {
     ngx_http_request_t *r = rqn->data;
 
     radius_server_t *rs;
     rs = get_server_by_req(rqn, log);
     if (rs == NULL) {
-        LOG_ERR(log, 0, "rs not found, req: 0x%xl, r: 0x%xl", rqn, r);
+        LOG_ERR(log, 0, "rs not found, r: 0x%xl, req: 0x%xl, req_id: %d",
+                r, rqn, rqn->ident);
         return;
     }
 
-    LOG_DEBUG(log, "req: 0x%xl, r: 0x%xl", rqn, r);
+    LOG_DEBUG(log, "r: 0x%xl, req: 0x%xl, req_id: %d", r, rqn, rqn->ident);
 
     rqn->active = 0;
     rqn->next = NULL;
@@ -225,14 +263,11 @@ release_req_queue_node(radius_req_queue_node_t *rqn,
 radius_req_queue_node_t *
 radius_recv_request(radius_server_t *rs, ngx_log_t *log)
 {
-    struct sockaddr sockaddr;
-    socklen_t       socklen = sizeof(sockaddr);
-
-    ssize_t len = recvfrom(rs->sockfd,
-                           rs->process_buf, sizeof(rs->process_buf),
-                           MSG_TRUNC, &sockaddr, &socklen);
+    ssize_t len = recv(rs->sockfd,
+                       rs->process_buf, sizeof(rs->process_buf),
+                       MSG_TRUNC);
     if (len < 0 || len > (int) sizeof(rs->process_buf)) {
-        LOG_ERR(log, ngx_errno, "recvfrom failed");
+        LOG_ERR(log, ngx_errno, "recv failed");
         return NULL;
     }
 
@@ -297,8 +332,7 @@ radius_send_request(ngx_array_t * radius_servers,
         return NULL;
     }
 
-    LOG_DEBUG(log, "fd: %d, req: 0x%xl, r: 0x%xl",
-              rs->sockfd, rqn, rqn->data);
+    LOG_DEBUG(log, "req: 0x%xl, req_id: %d", rqn, rqn->ident);
 
     int len = create_radius_req(rs->process_buf, sizeof(rs->process_buf),
                                 rqn->ident, user, passwd,

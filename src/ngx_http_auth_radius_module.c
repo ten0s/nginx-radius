@@ -141,9 +141,15 @@ radius_read_handler(ngx_event_t *rev)
     assert(log != NULL);
 
     ngx_connection_t *c = rev->data;
+
+    // DKL: the same connection shared ^ multiple requests
     radius_req_queue_node_t *rqn = c->data;
+
     ngx_http_request_t *r = rqn->data;
-    assert(r != NULL);
+    if (r == NULL) {
+        LOG_EMERG(log, 0, "r not found, req: 0x%xl", rqn);
+        assert(r != NULL);
+    }
 
     ngx_http_auth_radius_ctx_t *ctx;
     ctx = ngx_http_get_module_ctx(r, ngx_http_auth_radius_module);
@@ -186,17 +192,19 @@ radius_read_handler(ngx_event_t *rev)
     radius_req_queue_node_t *rqn2 = radius_recv_request(rs, log);
     if (rqn2 == NULL) {
         LOG_ERR(log, 0, "req not found");
+        // TODO: propagate HTTP_TOO_MANY_REQUESTS
+        // solution: increase queue size -> create config
         return;
     }
 
     if (rqn != rqn2) {
         LOG_ERR(log, 0, "req doesn't match");
-        return;
+        //return;
     }
 
     LOG_DEBUG(log,
-              "rs_id: %d, r: 0x%xl, req: 0x%xl, req_id: %d, acc: %d",
-              rs->id, r, rqn, rqn->ident, rqn->accepted);
+              "r: 0x%xl, req: 0x%xl, req_id: %d, acc: %d",
+              r, rqn, rqn->ident, rqn->accepted);
 
     ctx->done = 1;
     ctx->accepted = rqn->accepted;
@@ -247,37 +255,14 @@ ngx_http_auth_radius_send_radius_request(ngx_http_request_t *r,
     // DKL: what's going on here
     radius_server_t *rs = get_server_by_req(rqn, log);
     LOG_DEBUG(log,
-            "rs id: %d, assign 0x%xl to 0x%xl, req id: %d",
-            rs->id, r, rqn, rqn->ident);
+            "r: 0x%xl, req: 0x%xl, req_id: %d",
+            r, rqn, rqn->ident);
 
-    ngx_connection_t *c = rs->data;
-    if (c == NULL) {
-        // Get connection around socket
-        c = ngx_get_connection(rs->sockfd, log);
-        if (c == NULL) {
-            LOG_ERR(log, ngx_errno, "ngx_get_connection failed r: 0x%xl", r);
-            return NGX_ERROR;
-        }
+    ngx_connection_t *c = (ngx_connection_t *)rs->data;
 
-        if (ngx_nonblocking(rs->sockfd) == -1) {
-            LOG_ERR(log, ngx_errno, "ngx_nonblocking r: 0x%xl", r);
-            ngx_free_connection(c);
-            return NGX_ERROR;
-        }
-
-        // DKL: can rs be changed?
-        rs->data = c;
-
-        // Subscribe to read data event
-        if (ngx_add_event(c->read, NGX_READ_EVENT, NGX_LEVEL_EVENT) != NGX_OK) {
-            LOG_ERR(log, ngx_errno, "ngx_add_event failed r: 0x%xl", r);
-            return NGX_ERROR;
-        }
-
-        c->number = ngx_atomic_fetch_add(ngx_connection_counter, 1);
-    }
-
+    // DKL: the same connection shared ^ multiple requests
     c->data = rqn;
+
     ctx->rqn = rqn;
     rqn->data = r;
 
@@ -387,7 +372,7 @@ ngx_http_auth_radius_init(ngx_conf_t *cf)
 
     h = ngx_array_push(&cmcf->phases[NGX_HTTP_ACCESS_PHASE].handlers);
     if (h == NULL) {
-        CONF_LOG_EMERG(cf, ngx_errno, "nomem for ngx_array_push");
+        CONF_LOG_EMERG(cf, ngx_errno, "ngx_array_push failed");
         return NGX_ERROR;
     }
 
@@ -406,11 +391,9 @@ ngx_http_auth_radius_init_servers(ngx_cycle_t *cycle)
         return NGX_ERROR;
     }
 
-    if (radius_init_servers(mcf->servers) == -1) {
-        return NGX_ERROR;
-    }
-
-    return NGX_OK;
+    ngx_log_t *log = cycle->log;
+    LOG_DEBUG(log, "");
+    return radius_init_servers(mcf->servers, log);
 }
 
 static void
@@ -423,7 +406,9 @@ ngx_http_auth_radius_destroy_servers(ngx_cycle_t *cycle)
         return;
     }
 
-    radius_destroy_servers(mcf->servers);
+    ngx_log_t *log = cycle->log;
+    LOG_DEBUG(log, "");
+    radius_destroy_servers(mcf->servers, log);
 }
 
 static void *

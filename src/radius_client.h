@@ -39,8 +39,7 @@ radius_send_request(ngx_array_t *servers,
                     ngx_log_t *log);
 
 radius_server_t *
-get_server_by_req(radius_req_queue_node_t *rqn,
-                  ngx_log_t *log);
+get_server_by_req(radius_req_queue_node_t *rqn, ngx_log_t *log);
 
 radius_server_t *
 radius_add_server(radius_server_t *rs,
@@ -50,15 +49,14 @@ radius_add_server(radius_server_t *rs,
                   radius_str_t *secret,
                   radius_str_t *nas_id);
 
-int
-radius_init_servers(ngx_array_t *servers);
+ngx_int_t
+radius_init_servers(ngx_array_t *servers, ngx_log_t *log);
 
 void
-radius_destroy_servers(ngx_array_t *servers);
+radius_destroy_servers(ngx_array_t *servers, ngx_log_t *log);
 
 radius_req_queue_node_t *
-radius_recv_request(radius_server_t *rs,
-                    ngx_log_t *log);
+radius_recv_request(radius_server_t *rs, ngx_log_t *log);
 
 uint16_t
 create_radius_req(void *buf, size_t len,
@@ -70,5 +68,4 @@ create_radius_req(void *buf, size_t len,
                   unsigned char *auth);
 
 void
-release_req_queue_node(radius_req_queue_node_t *rqn,
-                       ngx_log_t *log);
+release_req_queue_node(radius_req_queue_node_t *rqn, ngx_log_t *log);
