@@ -13,8 +13,20 @@
 #define LOG_EMERG(log, err, fmt, ...) \
     LOG(NGX_LOG_EMERG, log, err, fmt, ##__VA_ARGS__);
 
+#define LOG_ALERT(log, err, fmt, ...) \
+    LOG(NGX_LOG_ALERT, log, err, fmt, ##__VA_ARGS__);
+
+#define LOG_CRIT(log, err, fmt, ...) \
+    LOG(NGX_LOG_CRIT, log, err, fmt, ##__VA_ARGS__);
+
 #define LOG_ERR(log, err, fmt, ...) \
     LOG(NGX_LOG_ERR, log, err, fmt, ##__VA_ARGS__);
+
+#define LOG_WARN(log, err, fmt, ...) \
+    LOG(NGX_LOG_WARN, log, err, fmt, ##__VA_ARGS__);
+
+#define LOG_NOTICE(log, err, fmt, ...) \
+    LOG(NGX_LOG_NOTICE, log, err, fmt, ##__VA_ARGS__);
 
 #define LOG_INFO(log, fmt, ...) \
     LOG(NGX_LOG_INFO, log, 0, fmt, ##__VA_ARGS__);
