@@ -20,7 +20,6 @@ typedef struct {
     uint8_t                     id;
     struct  sockaddr           *sockaddr;
     socklen_t                   socklen;
-    int                         sockfd;
     radius_str_t                secret;
     radius_str_t                nas_id;
 

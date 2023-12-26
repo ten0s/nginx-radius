@@ -188,16 +188,12 @@ create_connection(struct sockaddr *sockaddr,
         return NULL;
     }
 
-    //c->number = ngx_atomic_fetch_add(ngx_connection_counter, 1);
-    //LOG_DEBUG(log, "NUMBER: %d", c->number);
-
     return c;
 }
 
 static void
 close_connection(ngx_connection_t *c)
 {
-    //c->number = ngx_atomic_fetch_add(ngx_connection_counter, -1);
     ngx_close_connection(c);
 }
 
@@ -390,11 +386,9 @@ ngx_http_auth_radius_handler(ngx_http_request_t *r)
 
         // Parse credentials
         ngx_int_t rc = ngx_http_auth_basic_user(r);
-
-        if (rc == NGX_ERROR)
+        if (rc == NGX_ERROR) {
             return NGX_HTTP_INTERNAL_SERVER_ERROR;
-
-        if (rc == NGX_DECLINED) {
+        } else if (rc == NGX_DECLINED) {
             return ngx_http_auth_radius_set_realm(r, &lcf->realm);
         }
 
