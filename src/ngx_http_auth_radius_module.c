@@ -7,23 +7,23 @@
 #include "radius_client.h"
 
 typedef struct {
-    ngx_array_t             *servers;
-    ngx_msec_t               timeout;
-    ngx_uint_t               attempts;
-    radius_str_t             secret;
+    ngx_array_t *servers;
+    ngx_msec_t timeout;
+    ngx_uint_t attempts;
+    radius_str_t secret;
 } ngx_http_auth_radius_main_conf_t;
 
 typedef struct {
-    ngx_str_t                realm;
+    ngx_str_t realm;
 } ngx_http_auth_radius_loc_conf_t;
 
-typedef struct ngx_http_auth_radius_ctx_t {
-    u_char                   digest[32];
-    uint8_t                  attempts;
-    radius_req_queue_node_t *rqn;
-    uint8_t                  done:1;
-    uint8_t                  accepted:1;
-    uint8_t                  timedout:1;
+typedef struct {
+    u_char digest[32];
+    uint8_t attempts;
+    radius_req_t *req;
+    uint8_t done:1;
+    uint8_t accepted:1;
+    uint8_t timedout:1;
 } ngx_http_auth_radius_ctx_t;
 
 static void *
@@ -67,7 +67,7 @@ ngx_http_auth_radius_destroy_servers(ngx_cycle_t *cycle);
 
 static ngx_int_t
 ngx_http_auth_radius_send_radius_request(ngx_http_request_t *r,
-                                         radius_req_queue_node_t *prev_req);
+                                         radius_req_t *prev_req);
 
 static ngx_int_t
 ngx_http_auth_radius_set_realm(ngx_http_request_t *r,
@@ -205,9 +205,9 @@ ngx_http_auth_radius_read_handler(ngx_event_t *rev)
 
     ngx_connection_t *c = rev->data;
 
-    radius_req_queue_node_t *rqn = c->data;
+    radius_req_t *req = c->data;
 
-    ngx_http_request_t *r = rqn->data;
+    ngx_http_request_t *r = req->data;
     assert(r != NULL);
 
     ngx_http_auth_radius_ctx_t *ctx;
@@ -219,7 +219,7 @@ ngx_http_auth_radius_read_handler(ngx_event_t *rev)
         goto cleanup;
     }
 
-    assert(ctx->rqn == rqn);
+    assert(ctx->req == req);
 
     if (rev->timedout) {
         rev->timedout = 0;
@@ -239,7 +239,7 @@ ngx_http_auth_radius_read_handler(ngx_event_t *rev)
         }
 
         // Re-send RADIUS Auth event
-        ngx_http_auth_radius_send_radius_request(r, rqn);
+        ngx_http_auth_radius_send_radius_request(r, req);
         // TODO: free connection and req
         //close_connection(c);
         //return;
@@ -251,38 +251,38 @@ ngx_http_auth_radius_read_handler(ngx_event_t *rev)
         ngx_del_timer(rev);
     }
 
-    radius_server_t *rs = get_server_by_req(rqn, log);
-    radius_req_queue_node_t *rqn2 = radius_recv_request(c, rs, log);
-    if (rqn2 == NULL) {
+    radius_server_t *rs = get_server_by_req(req, log);
+    radius_req_t *req2 = radius_recv_request(c, rs, log);
+    if (req2 == NULL) {
         LOG_ERR(log, 0, "req not found");
         // TODO: propagate HTTP_TOO_MANY_REQUESTS
         // solution: increase queue size -> create config
         return;
     }
 
-    if (rqn != rqn2) {
+    if (req != req2) {
         LOG_ERR(log, 0, "req doesn't match");
         //return;
     }
 
     LOG_DEBUG(log,
               "r: 0x%xl, req: 0x%xl, req_id: %d, acc: %d",
-              r, rqn, rqn->ident, rqn->accepted);
+              r, req, req->ident, req->accepted);
 
     ctx->done = 1;
-    ctx->accepted = rqn->accepted;
+    ctx->accepted = req->accepted;
 
     // Post RADIUS Auth done event
     ngx_post_event(r->connection->write, &ngx_posted_events);
 
 cleanup:
     close_connection(c);
-    release_req_queue_node(rqn, log);
+    release_req(req, log);
 }
 
 static ngx_int_t
 ngx_http_auth_radius_send_radius_request(ngx_http_request_t *r,
-                                         radius_req_queue_node_t *prev_req)
+                                         radius_req_t *prev_req)
 {
     ngx_log_t *log = r->connection->log;
 
@@ -315,26 +315,26 @@ ngx_http_auth_radius_send_radius_request(ngx_http_request_t *r,
     radius_server_t *rs = &rss[0];
     ngx_connection_t *c = create_connection(rs->sockaddr, rs->socklen, log);
 
-    radius_req_queue_node_t *rqn;
-    rqn = radius_send_request(c,
+    radius_req_t *req;
+    req = radius_send_request(c,
                               mcf->servers,
                               prev_req,
                               &user, &passwd,
                               log);
-    if (rqn == NULL) {
-        LOG_ERR(log, 0, "rqn not found r: 0x%xl", r);
+    if (req == NULL) {
+        LOG_ERR(log, 0, "req not found r: 0x%xl", r);
         return NGX_ERROR;
     }
 
     // DKL: what's going on here
-    //radius_server_t *rs = get_server_by_req(rqn, log);
+    //radius_server_t *rs = get_server_by_req(req, log);
     LOG_DEBUG(log,
             "r: 0x%xl, req: 0x%xl, req_id: %d",
-            r, rqn, rqn->ident);
+            r, req, req->ident);
 
-    c->data = rqn;
-    ctx->rqn = rqn;
-    rqn->data = r;
+    c->data = req;
+    ctx->req = req;
+    req->data = r;
 
     // DKL: move to create connection?
     // Subscribe to read timeout event
