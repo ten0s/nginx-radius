@@ -111,28 +111,28 @@ static ngx_command_t ngx_http_auth_radius_commands[] = {
 };
 
 static ngx_http_module_t ngx_http_auth_radius_module_ctx = {
-    NULL,                                               /* preconfiguration */
-    ngx_http_auth_radius_init,                          /* postconfiguration */
-    ngx_http_auth_radius_create_main_conf,              /* create main configuration */
-    NULL,                                               /* init main configuration */
-    NULL,                                               /* create server configuration */
-    NULL,                                               /* merge server configuration */
-    ngx_http_auth_radius_create_loc_conf,               /* create location configuration */
-    ngx_http_auth_radius_merge_loc_conf,                /* merge location configuration */
+    NULL,                                    /* preconfiguration */
+    ngx_http_auth_radius_init,               /* postconfiguration */
+    ngx_http_auth_radius_create_main_conf,   /* create main configuration */
+    NULL,                                    /* init main configuration */
+    NULL,                                    /* create server configuration */
+    NULL,                                    /* merge server configuration */
+    ngx_http_auth_radius_create_loc_conf,    /* create location configuration */
+    ngx_http_auth_radius_merge_loc_conf,     /* merge location configuration */
 };
 
 ngx_module_t ngx_http_auth_radius_module = {
     NGX_MODULE_V1,
-    &ngx_http_auth_radius_module_ctx,       /* module context */
-    ngx_http_auth_radius_commands,          /* module directives */
-    NGX_HTTP_MODULE,                        /* module type */
-    NULL,                                   /* init master */
-    NULL,                                   /* init module */
-    ngx_http_auth_radius_init_servers,      /* init process */
-    NULL,                                   /* init thread */
-    NULL,                                   /* exit thread */
-    ngx_http_auth_radius_destroy_servers,   /* exit process */
-    NULL,                                   /* exit master */
+    &ngx_http_auth_radius_module_ctx,        /* module context */
+    ngx_http_auth_radius_commands,           /* module directives */
+    NGX_HTTP_MODULE,                         /* module type */
+    NULL,                                    /* init master */
+    NULL,                                    /* init module */
+    ngx_http_auth_radius_init_servers,       /* init process */
+    NULL,                                    /* init thread */
+    NULL,                                    /* exit thread */
+    ngx_http_auth_radius_destroy_servers,    /* exit process */
+    NULL,                                    /* exit master */
     NGX_MODULE_V1_PADDING
 };
 
@@ -457,7 +457,8 @@ static ngx_int_t
 ngx_http_auth_radius_init_servers(ngx_cycle_t *cycle)
 {
     ngx_http_auth_radius_main_conf_t *mcf;
-    mcf = ngx_http_cycle_get_module_main_conf(cycle, ngx_http_auth_radius_module);
+    mcf = ngx_http_cycle_get_module_main_conf(cycle,
+                                              ngx_http_auth_radius_module);
 
     if (mcf == NULL) {
         return NGX_ERROR;
@@ -472,7 +473,8 @@ static void
 ngx_http_auth_radius_destroy_servers(ngx_cycle_t *cycle)
 {
     ngx_http_auth_radius_main_conf_t *mcf;
-    mcf = ngx_http_cycle_get_module_main_conf(cycle, ngx_http_auth_radius_module);
+    mcf = ngx_http_cycle_get_module_main_conf(cycle,
+                                              ngx_http_auth_radius_module);
 
     if (mcf == NULL) {
         return;
@@ -661,7 +663,9 @@ ngx_http_auth_radius_set_auth_radius(ngx_conf_t *cf,
     }
 
     u_char *p;
-    p = ngx_cpymem(lcf->realm.data, "Basic realm=\"", sizeof("Basic realm=\"") - 1);
+    p = ngx_cpymem(lcf->realm.data,
+                   "Basic realm=\"",
+                   sizeof("Basic realm=\"") - 1);
     p = ngx_cpymem(p, value[1].data, value[1].len);
     *p = '"';
 

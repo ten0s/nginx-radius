@@ -80,14 +80,26 @@ typedef struct radius_attr_desc_t {
 #define RADIUS_ATTR_DESC_ITEM(t, lmin, lmax) .type = t, .len_min =  lmin, .len_max = lmax
 
 static radius_attr_desc_t attrs_desc[] = {
-    [RADIUS_ATTR_USER_NAME]         { RADIUS_ATTR_DESC_ITEM(radius_attr_type_str, 1, 61) },
-    [RADIUS_ATTR_USER_PASSWORD]     { RADIUS_ATTR_DESC_ITEM(radius_attr_type_str, 16, 128) },
-    [RADIUS_ATTR_CHAP_PASSWORD]     { RADIUS_ATTR_DESC_ITEM(radius_attr_type_chap_passwd,
-                                                            sizeof(radius_attr_chap_passwd_t),
-                                                            sizeof(radius_attr_chap_passwd_t)) },
-    [RADIUS_ATTR_NAS_IP_ADDRESS]    { RADIUS_ATTR_DESC_ITEM(radius_attr_type_address, 4, 4) },
-    [RADIUS_ATTR_NAS_PORT]          { RADIUS_ATTR_DESC_ITEM(radius_attr_type_address, 4, 4) },
-    [RADIUS_ATTR_NAS_IDENTIFIER]    { RADIUS_ATTR_DESC_ITEM(radius_attr_type_str, 3, 64) },
+    [RADIUS_ATTR_USER_NAME] {
+        RADIUS_ATTR_DESC_ITEM(radius_attr_type_str, 1, 61)
+    },
+    [RADIUS_ATTR_USER_PASSWORD] {
+        RADIUS_ATTR_DESC_ITEM(radius_attr_type_str, 16, 128)
+    },
+    [RADIUS_ATTR_CHAP_PASSWORD] {
+        RADIUS_ATTR_DESC_ITEM(radius_attr_type_chap_passwd,
+                              sizeof(radius_attr_chap_passwd_t),
+                              sizeof(radius_attr_chap_passwd_t))
+    },
+    [RADIUS_ATTR_NAS_IP_ADDRESS] {
+        RADIUS_ATTR_DESC_ITEM(radius_attr_type_address, 4, 4)
+    },
+    [RADIUS_ATTR_NAS_PORT] {
+        RADIUS_ATTR_DESC_ITEM(radius_attr_type_address, 4, 4)
+    },
+    [RADIUS_ATTR_NAS_IDENTIFIER] {
+        RADIUS_ATTR_DESC_ITEM(radius_attr_type_str, 3, 64)
+    },
 };
 
 static void
@@ -97,7 +109,9 @@ static void
 gen_authenticator(radius_auth_t *auth);
 
 static radius_error_t
-check_str_attr_range_mem(radius_pkg_builder_t *b, int radius_attr_id, uint16_t len);
+check_str_attr_range_mem(radius_pkg_builder_t *b,
+                         int radius_attr_id,
+                         uint16_t len);
 
 static radius_error_t
 make_access_request_pkg(radius_pkg_builder_t *b,
@@ -211,7 +225,8 @@ get_server_by_req(const radius_req_queue_node_t *rqn, ngx_log_t *log)
 {
     radius_server_t *rs;
     const radius_req_queue_node_t *base = rqn - rqn->ident;
-    rs = (radius_server_t *) ((char *)base - offsetof(radius_server_t, req_queue));
+    rs = (radius_server_t *) ((char *)base -
+                              offsetof(radius_server_t, req_queue));
     if (rs->magic != RADIUS_SERVER_MAGIC_HDR) {
         LOG_EMERG(log, 0, "invalid magic hdr");
         abort();
@@ -386,7 +401,9 @@ gen_authenticator(radius_auth_t *auth)
 }
 
 static radius_error_t
-check_str_attr_range_mem(radius_pkg_builder_t *b, int radius_attr_id, uint16_t len)
+check_str_attr_range_mem(radius_pkg_builder_t *b,
+                         int radius_attr_id,
+                         uint16_t len)
 {
     if (len < attrs_desc[radius_attr_id].len_min ||
         len > attrs_desc[radius_attr_id].len_max) {
@@ -403,7 +420,9 @@ check_str_attr_range_mem(radius_pkg_builder_t *b, int radius_attr_id, uint16_t l
 }
 
 static radius_error_t
-put_passwd_crypt(radius_pkg_builder_t *b, radius_str_t *secret, radius_str_t *passwd)
+put_passwd_crypt(radius_pkg_builder_t *b,
+                 radius_str_t *secret,
+                 radius_str_t *passwd)
 {
     uint8_t pwd_padded_len = 16 * (1 + passwd->len / 16);
     radius_error_t rc = check_str_attr_range_mem(b,
