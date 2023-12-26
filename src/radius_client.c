@@ -199,8 +199,9 @@ acquire_req_queue_node(radius_server_t* rs, ngx_log_t *log)
     if (rqn) {
         rs->req_free_list = rqn->next;
         rqn->active = 1;
-        if (rs->req_free_list == NULL)
+        if (rs->req_free_list == NULL) {
             rs->req_last_list = NULL;
+        }
     }
     return rqn;
 }
@@ -215,6 +216,7 @@ get_server_by_req(const radius_req_queue_node_t *rqn, ngx_log_t *log)
         LOG_EMERG(log, 0, "invalid magic hdr");
         abort();
     }
+
     return rs;
 }
 
@@ -378,31 +380,38 @@ static void
 gen_authenticator(radius_auth_t *auth)
 {
     uint8_t i;
-    for(i = 0; i < sizeof(radius_auth_t); i++)
+    for(i = 0; i < sizeof(radius_auth_t); i++) {
         auth->d[i] = radius_random();
+    }
 }
 
 static radius_error_t
 check_str_attr_range_mem(radius_pkg_builder_t *b, int radius_attr_id, uint16_t len)
 {
-    if (len < attrs_desc[radius_attr_id].len_min
-                    || len > attrs_desc[radius_attr_id].len_max)
+    if (len < attrs_desc[radius_attr_id].len_min ||
+        len > attrs_desc[radius_attr_id].len_max) {
         return radius_err_range;
+    }
+
     size_t remain = sizeof(b->pkg->attrs) - (b->pos - b->pkg->attrs);
     size_t str_attr_len_need = sizeof(radius_attr_hdr_t) + len;
-    if (str_attr_len_need > remain)
+    if (str_attr_len_need > remain) {
         return radius_err_mem;
-    return radius_err_ok;
+    }
 
+    return radius_err_ok;
 }
 
 static radius_error_t
 put_passwd_crypt(radius_pkg_builder_t *b, radius_str_t *secret, radius_str_t *passwd)
 {
     uint8_t pwd_padded_len = 16 * (1 + passwd->len / 16);
-    radius_error_t rc = check_str_attr_range_mem(b, RADIUS_ATTR_USER_PASSWORD, pwd_padded_len);
-    if (rc != radius_err_ok)
+    radius_error_t rc = check_str_attr_range_mem(b,
+                                                 RADIUS_ATTR_USER_PASSWORD,
+                                                 pwd_padded_len);
+    if (rc != radius_err_ok) {
         return rc;
+    }
 
     ngx_md5_t ctx;
     ngx_md5_t s_ctx;
@@ -431,8 +440,9 @@ put_passwd_crypt(radius_pkg_builder_t *b, radius_str_t *secret, radius_str_t *pa
     for(; pwd_padded_remain ;) {
         for(i = 0; i < 16; i++) {
             *c++ ^= pwd_remain ? *p++ : 0;
-            if (pwd_remain)
+            if (pwd_remain) {
                 pwd_remain--;
+            }
         }
         ctx = s_ctx;
         pwd_padded_remain -= 16;
@@ -452,8 +462,9 @@ static int
 put_str_attr(radius_pkg_builder_t *b, int radius_attr_id, radius_str_t *str)
 {
     radius_error_t rc = check_str_attr_range_mem(b, radius_attr_id, str->len);
-    if (rc != radius_err_ok)
+    if (rc != radius_err_ok) {
         return rc;
+    }
 
     radius_attr_hdr_t *ah = (radius_attr_hdr_t *) b->pos;
     ah->type = radius_attr_id;
@@ -461,6 +472,7 @@ put_str_attr(radius_pkg_builder_t *b, int radius_attr_id, radius_str_t *str)
     b->pos += sizeof(radius_attr_hdr_t);
     ngx_memcpy(b->pos, str->s, str->len);
     b->pos += str->len;
+
     return radius_err_ok;
 }
 
@@ -499,17 +511,20 @@ make_access_request_pkg(radius_pkg_builder_t *b,
 
     radius_error_t rc;
     rc = put_str_attr(b, RADIUS_ATTR_USER_NAME, user);
-    if (rc != radius_err_ok)
+    if (rc != radius_err_ok) {
         return rc;
+    }
 
     rc = put_passwd_crypt(b, secret, passwd);
-    if (rc != radius_err_ok)
+    if (rc != radius_err_ok) {
         return rc;
+    }
 
     if (nas_id->len >= 3) {
         rc = put_str_attr(b, RADIUS_ATTR_NAS_IDENTIFIER, nas_id);
-        if (rc != radius_err_ok)
+        if (rc != radius_err_ok) {
             return rc;
+        }
     }
 
     return radius_err_ok;
