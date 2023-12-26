@@ -1,4 +1,4 @@
-NGX_VER = 1.4.1
+NGX_VER = 1.20.1
 
 NGX_DISTR_BASE_URL = http://nginx.org/download
 NGX_DIR = nginx-$(NGX_VER)
@@ -34,7 +34,7 @@ getsrc:
 	[ -d $(DISTR_BASE_PATH) ] || $(MKDIR) -p $(DISTR_BASE_PATH)
 	[ -f $(NGX_TAR_PATH) ] || $(WGET) $(NGX_DISTR_URL) -O $(NGX_TAR_PATH)
 
-src: 
+src:
 	@if test -d $(NGX_SRC_PATH); then \
 		echo "source dir \"$(NGX_SRC_PATH)\" exists!"; \
 	else \
@@ -81,4 +81,3 @@ clean:
 
 clean_all: clean
 	rm -rf $(DISTR_BASE_PATH)
-	
