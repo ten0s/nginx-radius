@@ -146,6 +146,14 @@ create_connection(struct sockaddr *sockaddr,
         return NULL;
     }
 
+    // Set socket to non-blocking mode
+    if (ngx_nonblocking(sockfd) == -1) {
+        LOG_ERR(log, ngx_errno,
+                "ngx_nonblocking failed, sockfd: %d", sockfd);
+        ngx_close_socket(sockfd);
+        return NULL;
+    }
+
     // Connect socket to make it possible to use
     // recv(2)/send(2) instead of recvfrom(2)/sendto(2)
     if (connect(sockfd, sockaddr, socklen) == -1) {
@@ -163,15 +171,10 @@ create_connection(struct sockaddr *sockaddr,
         return NULL;
     }
 
-    if (ngx_nonblocking(sockfd) == -1) {
-        LOG_ERR(log, ngx_errno,
-                "ngx_nonblocking failed, sockfd: %d", sockfd);
-        ngx_close_connection(c);
-        return NULL;
-    }
+    // Set log to read data event
+    c->read->log = log;
 
     // Subscribe to read data event
-    c->read->log = log;
     if (ngx_add_event(c->read, NGX_READ_EVENT, NGX_LEVEL_EVENT) != NGX_OK) {
         LOG_ERR(log, ngx_errno,
                 "ngx_add_event failed, sockfd: %d", sockfd);
@@ -331,11 +334,9 @@ ngx_http_auth_radius_send_radius_request(ngx_http_request_t *r,
     ctx->rqn = rqn;
     rqn->data = r;
 
+    // Subscribe to read timeout event
     ngx_event_t *rev = c->read;
     rev->handler = radius_read_handler;
-    //rev->log = log; // DKL: added in create_connection
-
-    // Subscribe to read timeout event
     ngx_add_timer(rev, mcf->timeout);
 
     return NGX_AGAIN;
