@@ -90,6 +90,26 @@ static radius_attr_desc_t attrs_desc[] = {
     [RADIUS_ATTR_NAS_IDENTIFIER]    { RADIUS_ATTR_DESC_ITEM(radius_attr_type_str, 3, 64) },
 };
 
+static void
+init_radius_pkg(radius_pkg_builder_t *b, void *buf, int len);
+
+static void
+gen_authenticator(radius_auth_t *auth);
+
+static radius_error_t
+check_str_attr_range_mem(radius_pkg_builder_t *b, int radius_attr_id, uint16_t len);
+
+static radius_error_t
+make_access_request_pkg(radius_pkg_builder_t *b,
+                        uint8_t ident,
+                        radius_str_t *secret,
+                        radius_str_t *user,
+                        radius_str_t *passwd,
+                        radius_str_t *nas_id);
+
+static radius_error_t
+update_pkg_len(radius_pkg_builder_t *b);
+
 radius_server_t *
 radius_add_server(radius_server_t *rs,
                   int rs_id,
@@ -124,52 +144,24 @@ ngx_int_t
 radius_init_servers(ngx_array_t *radius_servers, ngx_log_t *log)
 {
     size_t i;
-    radius_server_t *rss;
-    radius_server_t *rs;
+    //radius_server_t *rss;
+    //radius_server_t *rs;
 
     if (radius_servers == NULL) {
         LOG_EMERG(log, 0, "no radius_servers");
         return NGX_ERROR;
     }
 
-    rss = radius_servers->elts;
+    //rss = radius_servers->elts;
     for (i = 0; i < radius_servers->nelts; i++) {
-        rs = &rss[i];
-        int sockfd = ngx_socket(AF_INET, SOCK_DGRAM, 0);
-        if (sockfd == -1) {
-            LOG_ERR(log, ngx_errno, "ngx_socket failed");
-            return NGX_ERROR;
-        }
+        //rs = &rss[i];
 
-        // Get connection around socket
-        ngx_connection_t *c = ngx_get_connection(sockfd, log);
-        if (c == NULL) {
-            LOG_ERR(log, ngx_errno,
-                    "ngx_get_connection failed, sockfd: %d", sockfd);
-            ngx_close_socket(sockfd);
-            return NGX_ERROR;
-        }
-
-        if (ngx_nonblocking(sockfd) == -1) {
-            LOG_ERR(log, ngx_errno,
-                    "ngx_nonblocking failed, sockfd: %d", sockfd);
-            ngx_free_connection(c);
-            ngx_close_socket(sockfd);
-            return NGX_ERROR;
-        }
-
-        // Subscribe to read data event
-        if (ngx_add_event(c->read, NGX_READ_EVENT, NGX_LEVEL_EVENT) != NGX_OK) {
-            LOG_ERR(log, ngx_errno,
-                    "ngx_add_event failed, sockfd: %d", sockfd);
-            ngx_free_connection(c);
-            ngx_close_socket(sockfd);
-            return NGX_ERROR;
-        }
-
-        rs->sockfd = sockfd;
-        rs->data = c;
-        c->number = ngx_atomic_fetch_add(ngx_connection_counter, 1);
+        //ngx_connection_t *c = create_connection(rs, log);
+        //if (c == NULL) {
+        //    return NGX_ERROR;
+        //}
+        //rs->sockfd = c->fd;
+        //rs->data = c;
     }
 
     return NGX_OK;
@@ -189,13 +181,9 @@ void radius_destroy_servers(ngx_array_t* radius_servers, ngx_log_t *log)
     rss = radius_servers->elts;
     for (i = 0; i < radius_servers->nelts; i++) {
         rs = &rss[i];
-        ngx_connection_t *c = rs->data;
-        int sockfd = rs->sockfd;
-
-        ngx_del_event(c->read, NGX_READ_EVENT, NGX_LEVEL_EVENT);
-        ngx_free_connection(c); // TODO: ngx_close_connection?
-        ngx_close_socket(sockfd);
-
+        //ngx_connection_t *c = rs->data;
+        //int sockfd = rs->sockfd;
+        //close_connection(c);
         rs->sockfd = -1;
         rs->data = NULL;
     }
@@ -218,10 +206,10 @@ acquire_req_queue_node(radius_server_t* rs, ngx_log_t *log)
 }
 
 radius_server_t *
-get_server_by_req(radius_req_queue_node_t *rqn, ngx_log_t *log)
+get_server_by_req(const radius_req_queue_node_t *rqn, ngx_log_t *log)
 {
     radius_server_t *rs;
-    radius_req_queue_node_t *base = rqn - rqn->ident;
+    const radius_req_queue_node_t *base = rqn - rqn->ident;
     rs = (radius_server_t *) ((char *)base - offsetof(radius_server_t, req_queue));
     if (rs->magic != RADIUS_SERVER_MAGIC_HDR) {
         LOG_EMERG(log, 0, "invalid magic hdr");
@@ -260,18 +248,87 @@ release_req_queue_node(radius_req_queue_node_t *rqn, ngx_log_t *log)
     rs->req_free_list = rs->req_last_list = rqn;
 }
 
-radius_req_queue_node_t *
-radius_recv_request(radius_server_t *rs, ngx_log_t *log)
+uint16_t
+create_radius_req(void *buf, size_t len,
+                  uint8_t ident,
+                  radius_str_t *user,
+                  radius_str_t *passwd,
+                  radius_str_t *secret,
+                  radius_str_t *nas_id,
+                  unsigned char *auth)
 {
-    ssize_t len = recv(rs->sockfd,
-                       rs->process_buf, sizeof(rs->process_buf),
+    radius_pkg_builder_t b;
+
+    init_radius_pkg(&b, buf, len);
+    gen_authenticator(&b.pkg->hdr.auth);
+    if (auth)
+        ngx_memcpy(auth, &b.pkg->hdr.auth, sizeof(b.pkg->hdr.auth));
+    make_access_request_pkg(&b, ident, secret, user, passwd, nas_id);
+
+    update_pkg_len(&b);
+
+    return b.pos - (unsigned char *)b.pkg;
+}
+
+radius_req_queue_node_t *
+radius_send_request(ngx_connection_t *c,
+                    ngx_array_t *radius_servers,
+                    const radius_req_queue_node_t *prev_req,
+                    radius_str_t *user,
+                    radius_str_t *passwd,
+                    ngx_log_t *log)
+{
+    radius_server_t *rss = radius_servers->elts;
+    radius_server_t *rs;
+
+    if (prev_req == NULL) {
+        rs = &rss[0];
+    } else {
+        rs = get_server_by_req(prev_req, log);
+        rs = &rss[(rs->id + 1) % radius_servers->nelts];
+        //release_req_queue_node(prev_req, log);
+    }
+
+    radius_req_queue_node_t *rqn;
+    rqn = acquire_req_queue_node(rs, log);
+    if (rqn == NULL) {
+        LOG_ERR(log, 0, "req not found");
+        // TODO: try next server?
+        return NULL;
+    }
+
+    LOG_DEBUG(log, "req: 0x%xl, req_id: %d", rqn, rqn->ident);
+
+    u_char buf[4096];
+    int len = create_radius_req(buf, sizeof(buf),
+                                rqn->ident, user, passwd,
+                                &rs->secret, &rs->nas_id, rqn->auth);
+
+    int rc = send(c->fd, buf, len, 0);
+    if (rc == -1) {
+        LOG_ERR(log, ngx_errno,
+                "send failed, fd: %d, r: 0x%xl, len: %u",
+                c->fd, rqn->data, len);
+        release_req_queue_node(rqn, log);
+        return NULL;
+    }
+
+    return rqn;
+}
+
+radius_req_queue_node_t *
+radius_recv_request(ngx_connection_t *c, radius_server_t *rs, ngx_log_t *log)
+{
+    u_char buf[4096];
+    ssize_t len = recv(c->fd,
+                       buf, sizeof(buf),
                        MSG_TRUNC);
-    if (len < 0 || len > (int) sizeof(rs->process_buf)) {
+    if (len < 0 || len > (int) sizeof(buf)) {
         LOG_ERR(log, ngx_errno, "recv failed");
         return NULL;
     }
 
-    radius_pkg_t *pkg = (radius_pkg_t *) rs->process_buf;
+    radius_pkg_t *pkg = (radius_pkg_t *)buf;
     uint16_t pkg_len = ntohs(pkg->hdr.len);
     if (len != pkg_len) {
         LOG_ERR(log, 0, "incorrect pkg len: %d | %d", len, pkg_len);
@@ -303,52 +360,6 @@ radius_recv_request(radius_server_t *rs, ngx_log_t *log)
     }
 
     rqn->accepted = pkg->hdr.code == RADIUS_CODE_ACCESS_ACCEPT;
-    return rqn;
-}
-
-radius_req_queue_node_t *
-radius_send_request(ngx_array_t * radius_servers,
-                    radius_req_queue_node_t * prev_req,
-                    radius_str_t *user,
-                    radius_str_t *passwd,
-                    ngx_log_t *log)
-{
-    radius_server_t *rss = radius_servers->elts;
-    radius_server_t *rs;
-
-    if (prev_req == NULL) {
-        rs = &rss[0];
-    } else {
-        rs = get_server_by_req(prev_req, log);
-        rs = &rss[(rs->id + 1) % radius_servers->nelts];
-        release_req_queue_node(prev_req, log);
-    }
-
-    radius_req_queue_node_t *rqn;
-    rqn = acquire_req_queue_node(rs, log);
-    if (rqn == NULL) {
-        LOG_ERR(log, 0, "req not found");
-        // TODO: try next server?
-        return NULL;
-    }
-
-    LOG_DEBUG(log, "req: 0x%xl, req_id: %d", rqn, rqn->ident);
-
-    int len = create_radius_req(rs->process_buf, sizeof(rs->process_buf),
-                                rqn->ident, user, passwd,
-                                &rs->secret, &rs->nas_id, rqn->auth);
-
-    int rc = sendto(rs->sockfd,
-                    rs->process_buf, len,
-                    0, rs->sockaddr, rs->socklen);
-    if (rc == -1) {
-        LOG_ERR(log, ngx_errno,
-                "sendto failed, fd: %d, r: 0x%xl, len: %u",
-                rs->sockfd, rqn->data, len);
-        release_req_queue_node(rqn, log);
-        return NULL;
-    }
-
     return rqn;
 }
 
@@ -507,26 +518,4 @@ update_pkg_len(radius_pkg_builder_t *b)
     uint16_t l = b->pos - (unsigned char*)&b->pkg->hdr;
     b->pkg->hdr.len = htons(l);
     return radius_err_ok;
-}
-
-uint16_t
-create_radius_req(void *buf, size_t len,
-                  uint8_t ident,
-                  radius_str_t *user,
-                  radius_str_t *passwd,
-                  radius_str_t *secret,
-                  radius_str_t *nas_id,
-                  unsigned char *auth)
-{
-    radius_pkg_builder_t b;
-
-    init_radius_pkg(&b, buf, len);
-    gen_authenticator(&b.pkg->hdr.auth);
-    if (auth)
-        ngx_memcpy(auth, &b.pkg->hdr.auth, sizeof(b.pkg->hdr.auth));
-    make_access_request_pkg(&b, ident, secret, user, passwd, nas_id);
-
-    update_pkg_len(&b);
-
-    return b.pos - (unsigned char *)b.pkg;
 }

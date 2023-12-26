@@ -134,6 +134,63 @@ ngx_module_t ngx_http_auth_radius_module = {
 
 #define RADIUS_STR_FROM_NGX_STR_INITIALIZER(ns) .len = ns.len, .s = ns.data
 
+static ngx_connection_t *
+create_connection(struct sockaddr *sockaddr,
+                  socklen_t socklen,
+                  ngx_log_t *log)
+{
+    // Create UDP socket
+    int sockfd = ngx_socket(AF_INET, SOCK_DGRAM, 0);
+    if (sockfd == -1) {
+        LOG_ERR(log, ngx_errno, "ngx_socket failed");
+        return NULL;
+    }
+
+    // Connect socket to make it possible to use
+    // recv(2)/send(2) instead of recvfrom(2)/sendto(2)
+    if (connect(sockfd, sockaddr, socklen) == -1) {
+        LOG_ERR(log, ngx_errno, "connect failed");
+        ngx_close_socket(sockfd);
+        return NULL;
+    }
+
+    // Get connection around socket
+    ngx_connection_t *c = ngx_get_connection(sockfd, log);
+    if (c == NULL) {
+        LOG_ERR(log, ngx_errno,
+                "ngx_get_connection failed, sockfd: %d", sockfd);
+        ngx_close_socket(sockfd);
+        return NULL;
+    }
+
+    if (ngx_nonblocking(sockfd) == -1) {
+        LOG_ERR(log, ngx_errno,
+                "ngx_nonblocking failed, sockfd: %d", sockfd);
+        ngx_close_connection(c);
+        return NULL;
+    }
+
+    // Subscribe to read data event
+    if (ngx_add_event(c->read, NGX_READ_EVENT, NGX_LEVEL_EVENT) != NGX_OK) {
+        LOG_ERR(log, ngx_errno,
+                "ngx_add_event failed, sockfd: %d", sockfd);
+        ngx_close_connection(c);
+        return NULL;
+    }
+
+    //c->number = ngx_atomic_fetch_add(ngx_connection_counter, 1);
+    //LOG_DEBUG(log, "NUMBER: %d", c->number);
+
+    return c;
+}
+
+static void
+close_connection(ngx_connection_t *c)
+{
+    //c->number = ngx_atomic_fetch_add(ngx_connection_counter, -1);
+    ngx_close_connection(c);
+}
+
 static void
 radius_read_handler(ngx_event_t *rev)
 {
@@ -142,27 +199,21 @@ radius_read_handler(ngx_event_t *rev)
 
     ngx_connection_t *c = rev->data;
 
-    // DKL: the same connection shared ^ multiple requests
     radius_req_queue_node_t *rqn = c->data;
 
     ngx_http_request_t *r = rqn->data;
-    if (r == NULL) {
-        LOG_EMERG(log, 0, "r not found, req: 0x%xl", rqn);
-        assert(r != NULL);
-    }
+    assert(r != NULL);
 
     ngx_http_auth_radius_ctx_t *ctx;
     ctx = ngx_http_get_module_ctx(r, ngx_http_auth_radius_module);
     if (ctx == NULL) {
         LOG_EMERG(log, 0, "ctx not found, r: 0x%xl", r);
-        return;
+        // TODO: free connection and req
+        //return;
+        goto cleanup;
     }
 
-    if (ctx->rqn != rqn) {
-        LOG_ERR(log, 0, "ctx->rqn != rqn, r: 0x%xl", r);
-        // TODO: should return or not?
-        //return;
-    }
+    assert(ctx->rqn == rqn);
 
     if (rev->timedout) {
         rev->timedout = 0;
@@ -175,12 +226,18 @@ radius_read_handler(ngx_event_t *rev)
             ctx->accepted = 0;
             ctx->timedout = 1;
             ngx_post_event(r->connection->write, &ngx_posted_events);
-            return;
+            // TODO: free connection and req
+            //close_connection(c);
+            //return;
+            goto cleanup;
         }
 
         // Re-send RADIUS Auth event
         ngx_http_auth_radius_send_radius_request(r, rqn);
-        return;
+        // TODO: free connection and req
+        //close_connection(c);
+        //return;
+        goto cleanup;
     }
 
     if (rev->timer_set) {
@@ -189,7 +246,7 @@ radius_read_handler(ngx_event_t *rev)
     }
 
     radius_server_t *rs = get_server_by_req(rqn, log);
-    radius_req_queue_node_t *rqn2 = radius_recv_request(rs, log);
+    radius_req_queue_node_t *rqn2 = radius_recv_request(c, rs, log);
     if (rqn2 == NULL) {
         LOG_ERR(log, 0, "req not found");
         // TODO: propagate HTTP_TOO_MANY_REQUESTS
@@ -212,6 +269,8 @@ radius_read_handler(ngx_event_t *rev)
     // Post RADIUS Auth done event
     ngx_post_event(r->connection->write, &ngx_posted_events);
 
+cleanup:
+    close_connection(c);
     release_req_queue_node(rqn, log);
 }
 
@@ -242,8 +301,17 @@ ngx_http_auth_radius_send_radius_request(ngx_http_request_t *r,
     };
 
     // Send RADIUS Auth request
+
+    // TODO:
+    // For each server there should be N connections allocated
+
+    radius_server_t *rss = mcf->servers->elts;
+    radius_server_t *rs = &rss[0];
+    ngx_connection_t *c = create_connection(rs->sockaddr, rs->socklen, log);
+
     radius_req_queue_node_t *rqn;
-    rqn = radius_send_request(mcf->servers,
+    rqn = radius_send_request(c,
+                              mcf->servers,
                               prev_req,
                               &user, &passwd,
                               log);
@@ -253,16 +321,12 @@ ngx_http_auth_radius_send_radius_request(ngx_http_request_t *r,
     }
 
     // DKL: what's going on here
-    radius_server_t *rs = get_server_by_req(rqn, log);
+    //radius_server_t *rs = get_server_by_req(rqn, log);
     LOG_DEBUG(log,
             "r: 0x%xl, req: 0x%xl, req_id: %d",
             r, rqn, rqn->ident);
 
-    ngx_connection_t *c = (ngx_connection_t *)rs->data;
-
-    // DKL: the same connection shared ^ multiple requests
     c->data = rqn;
-
     ctx->rqn = rqn;
     rqn->data = r;
 
