@@ -171,6 +171,7 @@ create_connection(struct sockaddr *sockaddr,
     }
 
     // Subscribe to read data event
+    c->read->log = log;
     if (ngx_add_event(c->read, NGX_READ_EVENT, NGX_LEVEL_EVENT) != NGX_OK) {
         LOG_ERR(log, ngx_errno,
                 "ngx_add_event failed, sockfd: %d", sockfd);
@@ -332,7 +333,7 @@ ngx_http_auth_radius_send_radius_request(ngx_http_request_t *r,
 
     ngx_event_t *rev = c->read;
     rev->handler = radius_read_handler;
-    rev->log = log;
+    //rev->log = log; // DKL: added in create_connection
 
     // Subscribe to read timeout event
     ngx_add_timer(rev, mcf->timeout);
