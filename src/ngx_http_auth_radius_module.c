@@ -653,7 +653,17 @@ ngx_http_auth_radius_set_auth_radius(ngx_conf_t *cf,
     ngx_http_auth_radius_loc_conf_t *lcf =
         ngx_http_conf_get_module_loc_conf(cf, ngx_http_auth_radius_module);
 
-    lcf->realm = value[1];
+    lcf->realm.len = sizeof("Basic realm=\"") - 1 + value[1].len + 1;
+    lcf->realm.data = ngx_pcalloc(cf->pool, lcf->realm.len);
+    if (lcf->realm.data == NULL) {
+        CONF_LOG_EMERG(cf, ngx_errno, "nx_pcalloc failed");
+        return NGX_CONF_ERROR;
+    }
+
+    u_char *p;
+    p = ngx_cpymem(lcf->realm.data, "Basic realm=\"", sizeof("Basic realm=\"") - 1);
+    p = ngx_cpymem(p, value[1].data, value[1].len);
+    *p = '"';
 
     return NGX_CONF_OK;
 }
