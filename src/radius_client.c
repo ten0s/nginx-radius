@@ -8,7 +8,7 @@
 #define RADIUS_STR_INIT(str) .s = str, .len = strlen(str)
 
 typedef struct radius_auth_t {
-    unsigned char   d[16]; // DKL: what's this?
+    unsigned char   d[16];
 } radius_auth_t;
 
 typedef struct radius_hdr_t {
@@ -299,7 +299,7 @@ radius_send_request(ngx_connection_t *c,
 
     LOG_DEBUG(log, "req: 0x%xl, req_id: %d", rqn, rqn->ident);
 
-    u_char buf[4096];
+    u_char buf[RADIUS_PKG_MAX];
     int len = create_radius_req(buf, sizeof(buf),
                                 rqn->ident, user, passwd,
                                 &rs->secret, &rs->nas_id, rqn->auth);
@@ -319,16 +319,19 @@ radius_send_request(ngx_connection_t *c,
 radius_req_queue_node_t *
 radius_recv_request(ngx_connection_t *c, radius_server_t *rs, ngx_log_t *log)
 {
-    u_char buf[4096];
-    ssize_t len = recv(c->fd,
-                       buf, sizeof(buf),
-                       MSG_TRUNC);
-    if (len < 0 || len > (int) sizeof(buf)) {
+    u_char buf[RADIUS_PKG_MAX];
+    ssize_t len = recv(c->fd, buf, sizeof(buf), MSG_TRUNC);
+    if (len == -1) {
         LOG_ERR(log, ngx_errno, "recv failed");
         return NULL;
     }
 
-    radius_pkg_t *pkg = (radius_pkg_t *)buf;
+    if (len > (int) sizeof(buf)) {
+        LOG_ERR(log, 0, "recv buf too small");
+        return NULL;
+    }
+
+    radius_pkg_t *pkg = (radius_pkg_t *) buf;
     uint16_t pkg_len = ntohs(pkg->hdr.len);
     if (len != pkg_len) {
         LOG_ERR(log, 0, "incorrect pkg len: %d | %d", len, pkg_len);
@@ -452,7 +455,7 @@ put_str_attr(radius_pkg_builder_t *b, int radius_attr_id, radius_str_t *str)
     if (rc != radius_err_ok)
         return rc;
 
-    radius_attr_hdr_t *ah = (radius_attr_hdr_t *)b->pos;
+    radius_attr_hdr_t *ah = (radius_attr_hdr_t *) b->pos;
     ah->type = radius_attr_id;
     ah->len = str->len + sizeof(radius_attr_hdr_t);
     b->pos += sizeof(radius_attr_hdr_t);
@@ -470,7 +473,7 @@ put_addr_attr(radius_pkg_builder_t* b, int radius_attr_id, uint32_t addr)
     if (attr_len_need > remain)
         return radius_err_mem;
 
-    radius_attr_hdr_t *ah = (radius_attr_hdr_t *)b->pos;
+    radius_attr_hdr_t *ah = (radius_attr_hdr_t *) b->pos;
     ah->type = radius_attr_id;
     ah->len = attr_len_need;
     b->pos += sizeof(radius_attr_hdr_t);
@@ -515,7 +518,7 @@ make_access_request_pkg(radius_pkg_builder_t *b,
 static radius_error_t
 update_pkg_len(radius_pkg_builder_t *b)
 {
-    uint16_t l = b->pos - (unsigned char*)&b->pkg->hdr;
+    uint16_t l = b->pos - (unsigned char*) &b->pkg->hdr;
     b->pkg->hdr.len = htons(l);
     return radius_err_ok;
 }

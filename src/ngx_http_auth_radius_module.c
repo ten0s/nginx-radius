@@ -73,6 +73,10 @@ static ngx_int_t
 ngx_http_auth_radius_set_realm(ngx_http_request_t *r,
                                const ngx_str_t *realm);
 
+static void
+ngx_http_auth_radius_read_handler(ngx_event_t *rev);
+
+
 static ngx_command_t ngx_http_auth_radius_commands[] = {
 
     { ngx_string("radius_server"),
@@ -171,8 +175,10 @@ create_connection(struct sockaddr *sockaddr,
         return NULL;
     }
 
-    // Set log to read data event
-    c->read->log = log;
+    c->log = log;
+    c->data = NULL;
+    c->read->handler = ngx_http_auth_radius_read_handler;
+    c->read->log = c->log;
 
     // Subscribe to read data event
     if (ngx_add_event(c->read, NGX_READ_EVENT, NGX_LEVEL_EVENT) != NGX_OK) {
@@ -196,7 +202,7 @@ close_connection(ngx_connection_t *c)
 }
 
 static void
-radius_read_handler(ngx_event_t *rev)
+ngx_http_auth_radius_read_handler(ngx_event_t *rev)
 {
     ngx_log_t *log = rev->log;
     assert(log != NULL);
@@ -334,9 +340,9 @@ ngx_http_auth_radius_send_radius_request(ngx_http_request_t *r,
     ctx->rqn = rqn;
     rqn->data = r;
 
+    // DKL: move to create connection?
     // Subscribe to read timeout event
     ngx_event_t *rev = c->read;
-    rev->handler = radius_read_handler;
     ngx_add_timer(rev, mcf->timeout);
 
     return NGX_AGAIN;
