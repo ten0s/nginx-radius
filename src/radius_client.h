@@ -33,8 +33,8 @@ typedef struct {
     void *data;
 } radius_server_t;
 
-uint16_t
-create_radius_req(void *buf, size_t len,
+size_t
+create_radius_pkg(void *buf, size_t len,
                   uint8_t ident,
                   radius_str_t *user,
                   radius_str_t *passwd,

@@ -58,8 +58,8 @@ make_access_request_pkg(radius_pkg_builder_t *b,
 static radius_error_t
 update_pkg_len(radius_pkg_builder_t *b);
 
-uint16_t
-create_radius_req(void *buf, size_t len,
+size_t
+create_radius_pkg(void *buf, size_t len,
                   uint8_t ident,
                   radius_str_t *user,
                   radius_str_t *passwd,
@@ -71,8 +71,9 @@ create_radius_req(void *buf, size_t len,
 
     init_radius_pkg(&b, buf, len);
     gen_authenticator(&b.pkg->hdr.auth);
-    if (auth)
+    if (auth) {
         ngx_memcpy(auth, &b.pkg->hdr.auth, sizeof(b.pkg->hdr.auth));
+    }
     make_access_request_pkg(&b, ident, secret, user, passwd, nas_id);
 
     update_pkg_len(&b);

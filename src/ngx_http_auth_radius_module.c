@@ -314,7 +314,7 @@ send_radius_request(ngx_array_t *radius_servers,
     LOG_DEBUG(log, "req: 0x%xl, req_id: %d", req, req->ident);
 
     u_char buf[RADIUS_PKG_MAX];
-    int len = create_radius_req(buf, sizeof(buf),
+    size_t len = create_radius_pkg(buf, sizeof(buf),
                                 req->ident, user, passwd,
                                 &rs->secret, &rs->nas_id, req->auth);
 
