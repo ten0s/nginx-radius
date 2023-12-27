@@ -258,7 +258,7 @@ acquire_radius_req(radius_server_t* rs, ngx_log_t *log)
 void
 release_radius_req(radius_req_t *req, ngx_log_t *log)
 {
-    ngx_http_request_t *r = req->data;
+    ngx_http_request_t *r = req->http_req;
 
     radius_server_t *rs;
     rs = get_server_by_req(req, log);
@@ -272,7 +272,7 @@ release_radius_req(radius_req_t *req, ngx_log_t *log)
 
     req->active = 0;
     req->next = NULL;
-    req->data = NULL;
+    req->http_req = NULL;
 
     if (rs->req_last_list) {
         rs->req_last_list->next = req;
@@ -322,7 +322,7 @@ send_radius_request(ngx_array_t *radius_servers,
     if (rc == -1) {
         LOG_ERR(log, ngx_errno,
                 "send failed, fd: %d, r: 0x%xl, len: %u",
-                req->conn->fd, req->data, len);
+                req->conn->fd, req->http_req, len);
         release_radius_req(req, log);
         return NULL;
     }
@@ -333,7 +333,7 @@ send_radius_request(ngx_array_t *radius_servers,
     return req;
 }
 
-radius_req_t *
+int
 recv_radius_request(radius_req_t *req, radius_server_t *rs, ngx_log_t *log)
 {
     // Remove read timeout event
@@ -345,28 +345,31 @@ recv_radius_request(radius_req_t *req, radius_server_t *rs, ngx_log_t *log)
     u_char buf[RADIUS_PKG_MAX];
     ssize_t len = recv(req->conn->fd, buf, sizeof(buf), MSG_TRUNC);
     if (len == -1) {
-        LOG_ERR(log, ngx_errno, "recv failed");
-        return NULL;
+        LOG_ERR(log, ngx_errno, "recv failed, req: 0x%xl, r: 0x%xl",
+                req, req->http_req);
+        return -1;
     }
 
     if (len > (int) sizeof(buf)) {
-        LOG_ERR(log, 0, "recv buf too small");
-        return NULL;
+        LOG_ERR(log, 0, "recv buf too small, req: 0x%xl, r: 0x%xl",
+                req, req->http_req);
+        return -1;
     }
 
+    // TODO: move to radius_lib
     radius_pkg_t *pkg = (radius_pkg_t *) buf;
     uint16_t pkg_len = ntohs(pkg->hdr.len);
     if (len != pkg_len) {
-        LOG_ERR(log, 0, "incorrect pkg len: %d | %d", len, pkg_len);
-        return NULL;
+        LOG_ERR(log, 0, "incorrect pkg len: %d vs %d, req: 0x%xl, r: 0x%xl",
+                len, pkg_len, req, req->http_req);
+        return -1;
     }
 
-    // TODO: is it needed?
-    //radius_req_t *req;
-    req = &rs->req_queue[pkg->hdr.ident];
-    if (req->active == 0) {
-        LOG_ERR(log, 0, "active = 0, 0x%xl, r: 0x%xl", req, req->data);
-        return NULL;
+    // Check correlation id matches
+    if (req->ident != pkg->hdr.ident) {
+        LOG_ERR(log, 0, "req id doesn't match, req: 0x%xl, r: 0x%xl",
+                req, req->http_req);
+        return -1;
     }
 
     ngx_md5_t ctx;
@@ -382,12 +385,13 @@ recv_radius_request(radius_req_t *req, radius_server_t *rs, ngx_log_t *log)
     ngx_md5_final(check, &ctx);
 
     if (ngx_memcmp(save_auth, check, sizeof(save_auth)) != 0) {
-        LOG_ERR(log, 0, "incorrect auth, r: 0x%xl", req->data);
-        return NULL;
+        LOG_ERR(log, 0, "incorrect auth, req: 0x%0xl, r: 0x%xl",
+                req, req->http_req);
+        return -1;
     }
 
     req->accepted = pkg->hdr.code == RADIUS_CODE_ACCESS_ACCEPT;
-    return req;
+    return 0;
 }
 
 static void
@@ -398,7 +402,7 @@ radius_read_handler(ngx_event_t *rev)
 
     ngx_connection_t *c = rev->data;
     radius_req_t *req = c->data;
-    ngx_http_request_t *r = req->data;
+    ngx_http_request_t *r = req->http_req;
     assert(r != NULL);
 
     ngx_http_auth_radius_ctx_t *ctx;
@@ -414,7 +418,7 @@ radius_read_handler(ngx_event_t *rev)
     if (rev->timedout) {
         rev->timedout = 0;
         ctx->attempts--;
-        LOG_DEBUG(log, "timeout 0x%xl, attempt: %d", r, ctx->attempts);
+        LOG_DEBUG(log, "timeout r: 0x%xl, attempt: %d", r, ctx->attempts);
 
         if (!ctx->attempts) {
             ctx->done = 1;
@@ -433,22 +437,15 @@ radius_read_handler(ngx_event_t *rev)
     }
 
     radius_server_t *rs = get_server_by_req(req, log);
-    radius_req_t *req2 = recv_radius_request(req, rs, log);
-    if (req2 == NULL) {
-        LOG_ERR(log, 0, "req not found");
-        // TODO: propagate HTTP_TOO_MANY_REQUESTS
-        // solution: increase queue size -> create config
+    int rc = recv_radius_request(req, rs, log);
+    if (rc == -1) {
+        LOG_ERR(log, 0, "bad req, r: 0x%xl", r);
         return;
     }
 
-    if (req != req2) {
-        LOG_ERR(log, 0, "req doesn't match");
-        //return;
-    }
-
     LOG_DEBUG(log,
-              "r: 0x%xl, req: 0x%xl, req_id: %d, acc: %d",
-              r, req, req->ident, req->accepted);
+              "accepted: %d, r: 0x%xl, req: 0x%xl, req_id: %d",
+              req->accepted, r, req, req->ident);
 
     ctx->done = 1;
     ctx->accepted = req->accepted;
@@ -501,7 +498,7 @@ ngx_http_auth_radius_send_radius_request(ngx_http_request_t *r,
             r, req, req->ident);
 
     ctx->req = req;
-    req->data = r;
+    req->http_req = r;
 
     return NGX_AGAIN;
 }
@@ -553,8 +550,6 @@ ngx_http_auth_radius_handler(ngx_http_request_t *r)
         } else if (rc == NGX_DECLINED) {
             return ngx_http_auth_radius_set_realm(r, &lcf->realm);
         }
-
-        // TODO: move to _send_radius_request?
 
         ctx = ngx_pcalloc(r->pool, sizeof(*ctx));
         if (ctx == NULL) {

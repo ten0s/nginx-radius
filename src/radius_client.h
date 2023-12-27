@@ -13,7 +13,7 @@ typedef struct radius_req_s {
     uint8_t active:1;
     uint8_t accepted:1;
     ngx_connection_t *conn;
-    void *data;
+    ngx_http_request_t *http_req;
     struct radius_req_s *next;
 } radius_req_t;
 
