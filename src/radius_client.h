@@ -33,7 +33,6 @@ typedef struct radius_server_s {
     radius_req_t req_queue[10/*UCHAR_MAX + 1*/];
     radius_req_t *req_free_list;
     radius_req_t *req_last_list;
-    void *data;
 } radius_server_t;
 
 size_t
