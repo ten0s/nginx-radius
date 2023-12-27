@@ -287,7 +287,7 @@ release_radius_req(radius_req_t *req, ngx_log_t *log)
 
 radius_req_t *
 send_radius_request(ngx_array_t *radius_servers,
-                    const radius_req_t *prev_req,
+                    radius_req_t *prev_req,
                     radius_str_t *user,
                     radius_str_t *passwd,
                     ngx_msec_t timeout,
@@ -301,7 +301,7 @@ send_radius_request(ngx_array_t *radius_servers,
     } else {
         rs = get_server_by_req(prev_req, log);
         rs = &rss[(rs->id + 1) % radius_servers->nelts];
-        //release_radius_req(prev_req, log); // TODO
+        release_radius_req(prev_req, log);
     }
 
     radius_req_t *req = acquire_radius_req(rs, log);
@@ -336,6 +336,12 @@ send_radius_request(ngx_array_t *radius_servers,
 radius_req_t *
 recv_radius_request(radius_req_t *req, radius_server_t *rs, ngx_log_t *log)
 {
+    // Remove read timeout event
+    if (req->conn->read->timer_set) {
+        req->conn->read->timer_set = 0;
+        ngx_del_timer(req->conn->read);
+    }
+
     u_char buf[RADIUS_PKG_MAX];
     ssize_t len = recv(req->conn->fd, buf, sizeof(buf), MSG_TRUNC);
     if (len == -1) {
@@ -391,9 +397,7 @@ radius_read_handler(ngx_event_t *rev)
     assert(log != NULL);
 
     ngx_connection_t *c = rev->data;
-
     radius_req_t *req = c->data;
-
     ngx_http_request_t *r = req->data;
     assert(r != NULL);
 
@@ -401,9 +405,8 @@ radius_read_handler(ngx_event_t *rev)
     ctx = ngx_http_get_module_ctx(r, ngx_http_auth_radius_module);
     if (ctx == NULL) {
         LOG_EMERG(log, 0, "ctx not found, r: 0x%xl", r);
-        // TODO: free connection and req
-        //return;
-        goto cleanup;
+        release_radius_req(req, log);
+        return;
     }
 
     assert(ctx->req == req);
@@ -411,31 +414,22 @@ radius_read_handler(ngx_event_t *rev)
     if (rev->timedout) {
         rev->timedout = 0;
         ctx->attempts--;
-        LOG_DEBUG(log, "timeout 0x%xl, attempt: %d",
-                  r, ctx->attempts);
+        LOG_DEBUG(log, "timeout 0x%xl, attempt: %d", r, ctx->attempts);
 
         if (!ctx->attempts) {
             ctx->done = 1;
             ctx->accepted = 0;
             ctx->timedout = 1;
-            ngx_post_event(r->connection->write, &ngx_posted_events);
-            // TODO: free connection and req
-            //close_connection(c);
-            //return;
-            goto cleanup;
+            goto auth_done;
         }
+
+        // TODO: review logic here
+        // We need to send `retries` to one server and only
+        // after the retries got exhausted move to the next server.
 
         // Re-send RADIUS Auth event
         ngx_http_auth_radius_send_radius_request(r, req);
-        // TODO: free connection and req
-        //close_connection(c);
-        //return;
-        goto cleanup;
-    }
-
-    if (rev->timer_set) {
-        rev->timer_set = 0;
-        ngx_del_timer(rev);
+        return;
     }
 
     radius_server_t *rs = get_server_by_req(req, log);
@@ -459,11 +453,9 @@ radius_read_handler(ngx_event_t *rev)
     ctx->done = 1;
     ctx->accepted = req->accepted;
 
+auth_done:
     // Post RADIUS Auth done event
     ngx_post_event(r->connection->write, &ngx_posted_events);
-
-cleanup:
-    close_connection(c);
     release_radius_req(req, log);
 }
 
