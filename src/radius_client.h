@@ -3,8 +3,10 @@
 
 typedef struct {
     uint16_t len;
-    unsigned char* s;
+    u_char* s;
 } radius_str_t;
+
+struct radius_server_s;
 
 typedef struct radius_req_s {
     // Should be big enough to address req_queue
@@ -12,12 +14,13 @@ typedef struct radius_req_s {
     u_char auth[16];
     uint8_t active:1;
     uint8_t accepted:1;
+    struct radius_server_s *rs;
     ngx_connection_t *conn;
     ngx_http_request_t *http_req;
     struct radius_req_s *next;
 } radius_req_t;
 
-typedef struct {
+typedef struct radius_server_s {
     uint32_t magic;
     uint8_t id;
     struct sockaddr *sockaddr;

@@ -148,8 +148,8 @@ put_passwd_crypt(radius_pkg_builder_t *b,
 
     uint8_t pwd_remain = passwd->len;
     uint8_t pwd_padded_remain = pwd_padded_len;
-    unsigned char *p = passwd->s;
-    unsigned char *c = b->pos;
+    u_char *p = passwd->s;
+    u_char *c = b->pos;
 
     ah->len = sizeof(radius_attr_hdr_t) + pwd_padded_remain;
 
