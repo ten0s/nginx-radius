@@ -215,8 +215,9 @@ radius_add_server(radius_server_t *rs,
     rs->nas_id = *nas_id;
     ngx_memset(rs->req_queue, 0, sizeof(rs->req_queue));
 
+    size_t i;
     radius_req_t *req;
-    for (size_t i = 1; i < ARR_LEN(rs->req_queue); ++i) {
+    for (i = 1; i < ARR_LEN(rs->req_queue); ++i) {
         req = &rs->req_queue[i];
         req->ident = i;
         rs->req_queue[i - 1].next = req;
@@ -627,8 +628,9 @@ radius_init_servers(ngx_array_t *radius_servers, ngx_log_t *log)
         return NGX_ERROR;
     }
 
+    size_t i;
     radius_server_t *rss = radius_servers->elts;
-    for (size_t i = 0; i < radius_servers->nelts; ++i) {
+    for (i = 0; i < radius_servers->nelts; ++i) {
         radius_server_t *rs = &rss[i];
         for (size_t j = 0; j < ARR_LEN(rs->req_queue); ++j) {
             radius_req_t *req = &rs->req_queue[j];
@@ -654,10 +656,11 @@ radius_destroy_servers(ngx_array_t* radius_servers, ngx_log_t *log)
         return;
     }
 
+    size_t i, j;
     radius_server_t *rss = radius_servers->elts;
-    for (size_t i = 0; i < radius_servers->nelts; ++i) {
+    for (i = 0; i < radius_servers->nelts; ++i) {
         radius_server_t *rs = &rss[i];
-        for (size_t j = 0; j < ARR_LEN(rs->req_queue); ++j) {
+        for (j = 0; j < ARR_LEN(rs->req_queue); ++j) {
             radius_req_t *req = &rs->req_queue[j];
             if (req->conn) {
                 close_connection(req->conn);
