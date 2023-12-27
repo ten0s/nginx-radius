@@ -628,11 +628,11 @@ radius_init_servers(ngx_array_t *radius_servers, ngx_log_t *log)
         return NGX_ERROR;
     }
 
-    size_t i;
+    size_t i, j;
     radius_server_t *rss = radius_servers->elts;
     for (i = 0; i < radius_servers->nelts; ++i) {
         radius_server_t *rs = &rss[i];
-        for (size_t j = 0; j < ARR_LEN(rs->req_queue); ++j) {
+        for (j = 0; j < ARR_LEN(rs->req_queue); ++j) {
             radius_req_t *req = &rs->req_queue[j];
             ngx_connection_t *c = create_connection(rs->sockaddr,
                                                     rs->socklen, log);
