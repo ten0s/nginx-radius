@@ -9,11 +9,43 @@
 
 #define ARR_LEN(arr) sizeof(arr)/sizeof(arr[0])
 
+#define RADIUS_DEFAULT_PORT 1812
+
+struct radius_server_s;
+
+typedef struct radius_req_s {
+    // Should be big enough to address req_queue
+    uint8_t ident;
+    uint8_t auth[16];
+    uint8_t active:1;
+    uint8_t accepted:1;
+    struct radius_server_s *rs;
+    ngx_connection_t *conn;
+    ngx_http_request_t *http_req;
+    struct radius_req_s *next;
+} radius_req_t;
+
+typedef struct radius_server_s {
+    uint32_t magic;
+    uint8_t id;
+    struct sockaddr *sockaddr;
+    socklen_t socklen;
+    ngx_str_t secret;
+    ngx_str_t nas_id;
+
+    // Effectively, the number of concurrent requests can be processed
+    // without retrying. See ngx_http_auth_radius_handler.
+    // TODO: get 'queue_size' [1..255] from server config
+    radius_req_t req_queue[10];
+    radius_req_t *req_free_list;
+    radius_req_t *req_last_list;
+} radius_server_t;
+
 typedef struct {
     ngx_array_t *servers;
     ngx_msec_t timeout;
     ngx_uint_t attempts;
-    radius_str_t secret;
+    ngx_str_t secret;
 } ngx_http_auth_radius_main_conf_t;
 
 typedef struct {
@@ -136,8 +168,6 @@ ngx_module_t ngx_http_auth_radius_module = {
     NGX_MODULE_V1_PADDING
 };
 
-#define RADIUS_STR_FROM_NGX_STR_INITIALIZER(ns) .len = ns.len, .s = ns.data
-
 static void
 radius_read_handler(ngx_event_t *ev);
 
@@ -208,8 +238,8 @@ add_radius_server(radius_server_t *rs,
                   int rs_id,
                   struct sockaddr *sockaddr,
                   socklen_t socklen,
-                  radius_str_t *secret,
-                  radius_str_t *nas_id)
+                  const ngx_str_t *secret,
+                  const ngx_str_t *nas_id)
 {
     rs->magic = RADIUS_SERVER_MAGIC_HDR;
     rs->id = rs_id;
@@ -268,8 +298,8 @@ release_radius_req(radius_req_t *req, ngx_log_t *log)
 
 int
 send_radius_pkg(radius_req_t *req,
-                radius_str_t *user,
-                radius_str_t *passwd,
+                const ngx_str_t *user,
+                const ngx_str_t *passwd,
                 ngx_msec_t timeout,
                 ngx_log_t *log)
 {
@@ -343,7 +373,7 @@ recv_radius_pkg(radius_req_t *req, radius_server_t *rs, ngx_log_t *log)
     ngx_memcpy(save_auth, &pkg->hdr.auth, sizeof(save_auth));
     ngx_memcpy(&pkg->hdr.auth, &req->auth, sizeof(pkg->hdr.auth));
     ngx_md5_update(&ctx, pkg, len);
-    ngx_md5_update(&ctx, rs->secret.s, rs->secret.len);
+    ngx_md5_update(&ctx, rs->secret.data, rs->secret.len);
     ngx_md5_final(check, &ctx);
 
     if (ngx_memcmp(save_auth, check, sizeof(save_auth)) != 0) {
@@ -449,16 +479,10 @@ ngx_http_auth_radius_send_radius_request(ngx_http_request_t *r,
         return NGX_ERROR;
     }
 
-    radius_str_t user = {
-        RADIUS_STR_FROM_NGX_STR_INITIALIZER(r->headers_in.user)
-    };
-    radius_str_t passwd = {
-        RADIUS_STR_FROM_NGX_STR_INITIALIZER(r->headers_in.passwd)
-    };
-
     // Send RADIUS Auth request
     int rc = send_radius_pkg(req,
-                             &user, &passwd,
+                             &r->headers_in.user,
+                             &r->headers_in.passwd,
                              mcf->timeout,
                              log);
     if (rc == -1) {
@@ -780,20 +804,11 @@ ngx_http_auth_radius_set_radius_server(ngx_conf_t *cf,
         return NGX_CONF_ERROR;
     }
 
-    radius_str_t secret;
-    secret.s = value[2].data;
-    secret.len = value[2].len;
+    ngx_str_t *secret = &value[2];
 
-    mcf->secret.s = secret.s;
-    mcf->secret.len = secret.len;
-
-    radius_str_t nas_id;
-    nas_id.s = NULL;
-    nas_id.len = 0;
-
+    ngx_str_t *nas_id = NULL;
     if (cf->args->nelts == 4) {
-        nas_id.s = value[3].data;
-        nas_id.len = value[3].len;
+        nas_id = &value[3];
     }
 
     radius_server_t *rs = ngx_array_push(mcf->servers);
@@ -807,7 +822,7 @@ ngx_http_auth_radius_set_radius_server(ngx_conf_t *cf,
     int rs_id = mcf->servers->nelts;
     add_radius_server(rs, rs_id,
                       u.addrs[0].sockaddr, u.addrs[0].socklen,
-                      &secret, &nas_id);
+                      secret, nas_id);
 
     return NGX_CONF_OK;
 }
