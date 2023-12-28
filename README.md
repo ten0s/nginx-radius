@@ -24,16 +24,16 @@ $ make install
 Sample config file: `conf/nginx.conf`:
 
 ```
-    # Address, secret and nas-identifier of radius server.
-    # Can be several servers.
-    radius_server       127.0.0.1:1812 "secret" "nas-identifier";
+# Address, secret and nas-identifier of radius server.
+# Can be several servers.
+radius_server       127.0.0.1:1812 "secret" "nas-identifier";
 
-    # Timeout for radius requests.
-    radius_timeout      5s;
+# Timeout for radius requests.
+radius_timeout      5s;
 
-    # Retries count for radius requests.
-    radius_retries      3;
+# Retries count for radius requests.
+radius_retries      3;
 
-    # Location directive for enable module.
-    auth_radius         "realm" | off;
+# Location directive for enable module.
+auth_radius         "realm" | off;
 ```
