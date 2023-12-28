@@ -54,6 +54,7 @@ typedef struct {
     uint8_t done:1;
     uint8_t accepted:1;
     uint8_t timedout:1;
+    uint8_t refused:1;
     uint8_t error:1;
 } ngx_http_auth_radius_ctx_t;
 
@@ -328,14 +329,14 @@ recv_radius_pkg(radius_req_t *req, radius_server_t *rs, ngx_log_t *log)
     uint8_t buf[RADIUS_PKG_MAX];
     ssize_t len = recv(req->conn->fd, buf, sizeof(buf), MSG_TRUNC);
     if (len == -1) {
-        LOG_ERR(log, ngx_errno, "recv failed, req: 0x%xl, r: 0x%xl",
-                req, req->http_req);
+        LOG_ERR(log, ngx_errno, "recv failed, r: 0x%xl, req: 0x%xl",
+                req->http_req, req);
         return -1;
     }
 
     if (len > (int) sizeof(buf)) {
-        LOG_ERR(log, 0, "recv buf too small, req: 0x%xl, r: 0x%xl",
-                req, req->http_req);
+        LOG_ERR(log, 0, "recv buf too small, r: 0x%xl, req: 0x%xl",
+                req->http_req, req);
         return -1;
     }
 
@@ -347,23 +348,23 @@ recv_radius_pkg(radius_req_t *req, radius_server_t *rs, ngx_log_t *log)
         switch (rc) {
         case -1:
             LOG_ERR(log, 0,
-                    "parse pkg error: incorrect pkg len: %d, req: 0x%xl, r: 0x%xl",
-                    len, req, req->http_req);
+                    "parse pkg error: incorrect pkg len: %d, r: 0x%xl, req: 0x%xl",
+                    len, req->http_req, req);
             break;
         case -2:
             LOG_ERR(log, 0,
-                    "parse pkg error: req id doesn't match, req: 0x%xl, r: 0x%xl",
-                    req, req->http_req);
+                    "parse pkg error: req id doesn't match, r: 0x%xl, req: 0x%xl",
+                    req->http_req, req);
             break;
         case -3:
             LOG_ERR(log, 0,
-                    "parse pkg error: incorrect auth, req: 0x%xl, r: 0x%xl",
-                    req, req->http_req);
+                    "parse pkg error: incorrect auth, r: 0x%xl, req: 0x%xl",
+                    req->http_req, req);
             break;
         default:
             LOG_ERR(log, 0,
-                    "parse pkg error: unknown rc: %d, req: 0x%xl, r: 0x%xl",
-                    rc, req, req->http_req);
+                    "parse pkg error: unknown rc: %d, r: 0x%xl, req: 0x%xl",
+                    rc, req->http_req, req);
             break;
         }
 
@@ -386,17 +387,15 @@ static void
 radius_read_handler(ngx_event_t *ev)
 {
     ngx_log_t *log = ev->log;
-    assert(log != NULL);
 
     ngx_connection_t *c = ev->data;
     radius_req_t *req = c->data;
     ngx_http_request_t *r = req->http_req;
-    assert(r != NULL);
 
     ngx_http_auth_radius_ctx_t *ctx;
     ctx = ngx_http_get_module_ctx(r, ngx_http_auth_radius_module);
     if (ctx == NULL) {
-        LOG_EMERG(log, 0, "ctx not found, r: 0x%xl", r);
+        LOG_EMERG(log, 0, "ctx not found r: 0x%xl", r);
         release_radius_req(req);
         return;
     }
@@ -405,10 +404,12 @@ radius_read_handler(ngx_event_t *ev)
 
     if (ev->timedout) {
         ev->timedout = 0;
+
         ctx->retries--;
-        LOG_DEBUG(log, "timeout r: 0x%xl, retries: %d", r, ctx->retries);
+        LOG_DEBUG(log, "timedout r: 0x%xl, retries: %d", r, ctx->retries);
 
         if (!ctx->retries) {
+            // TODO: Move to next server
             ctx->done = 1;
             ctx->accepted = 0;
             ctx->timedout = 1;
@@ -423,6 +424,7 @@ radius_read_handler(ngx_event_t *ev)
         ngx_int_t rc = ngx_http_auth_radius_send_radius_request(r, req);
         if (rc == NGX_ERROR) {
             ctx->done = 1;
+            ctx->accepted = 0;
             ctx->error = 1;
             goto auth_done;
         }
@@ -432,8 +434,19 @@ radius_read_handler(ngx_event_t *ev)
     radius_server_t *rs = req->rs;
     int rc = recv_radius_pkg(req, rs, log);
     if (rc == -1) {
-        LOG_ERR(log, 0, "recv radius pkg: bad req, r: 0x%xl", r);
-        return;
+        if (ngx_errno == ECONNREFUSED) {
+            LOG_ERR(log, 0, "recv radius pkg: connection refused r: 0x%xl", r);
+            ctx->done = 1;
+            ctx->accepted = 0;
+            ctx->refused = 1;
+            goto auth_done;
+        } else {
+            LOG_ERR(log, 0, "recv radius pkg: bad pkg r: 0x%xl", r);
+            ctx->done = 1;
+            ctx->accepted = 0;
+            ctx->error = 1;
+            goto auth_done;
+        }
     }
 
     LOG_DEBUG(log,
@@ -570,10 +583,11 @@ ngx_http_auth_radius_handler(ngx_http_request_t *r)
         ctx->done = 0;
         ctx->accepted = 0;
         ctx->timedout = 0;
+        ctx->refused = 0;
         ctx->error = 0;
         ngx_http_set_ctx(r, ctx, ngx_http_auth_radius_module);
 
-        LOG_DEBUG(log, "req: 0x%xl, req_id: %d", req, req->ident);
+        LOG_DEBUG(log, "r: 0x%xl, req: 0x%xl, req_id: %d", r, req, req->ident);
         rc = ngx_http_auth_radius_send_radius_request(r, req);
         if (rc == NGX_ERROR) {
             ctx->done = 1;
@@ -594,6 +608,9 @@ ngx_http_auth_radius_handler(ngx_http_request_t *r)
     if (!ctx->accepted) {
         if (ctx->timedout) {
             LOG_INFO(log, "timedout r: 0x%xl", r);
+            return NGX_HTTP_SERVICE_UNAVAILABLE;
+        } else if (ctx->refused) {
+            LOG_INFO(log, "connection refused r: 0x%xl", r);
             return NGX_HTTP_SERVICE_UNAVAILABLE;
         } else {
             LOG_INFO(log, "rejected r: 0x%xl", r);
