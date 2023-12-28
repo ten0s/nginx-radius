@@ -161,11 +161,11 @@ radius_read_handler(ngx_event_t *ev);
 static void
 radius_retry_handler(ngx_event_t *ev);
 
-static void
-destroy_radius_servers(ngx_array_t* servers, ngx_log_t *log);
-
 static ngx_int_t
 init_radius_servers(ngx_array_t *servers, ngx_log_t *log);
+
+static void
+destroy_radius_servers(ngx_array_t* servers, ngx_log_t *log);
 
 static ngx_connection_t *
 create_radius_connection(struct sockaddr *sockaddr,
@@ -194,6 +194,9 @@ send_radius_request(ngx_http_request_t *r,
                     ngx_http_auth_radius_ctx_t *ctx,
                     radius_req_t *req);
 
+static ngx_int_t
+set_realm(ngx_http_request_t *r, const ngx_str_t *realm);
+
 static radius_req_t *
 acquire_radius_req(radius_server_t* rs);
 
@@ -210,9 +213,6 @@ static int
 recv_radius_pkg(radius_req_t *req,
                 radius_server_t *rs,
                 ngx_log_t *log);
-
-static ngx_int_t
-set_realm(ngx_http_request_t *r, const ngx_str_t *realm);
 
 static ngx_int_t
 ngx_http_auth_radius_handler(ngx_http_request_t *r)
@@ -520,6 +520,61 @@ ngx_http_auth_radius_destroy_servers(ngx_cycle_t *cycle)
     destroy_radius_servers(mcf->servers, log);
 }
 
+static ngx_int_t
+init_radius_servers(ngx_array_t *servers, ngx_log_t *log)
+{
+    if (servers == NULL) {
+        LOG_EMERG(log, 0, "no radius servers");
+        return NGX_ERROR;
+    }
+
+    size_t i, j;
+    radius_server_t *rss = servers->elts;
+    for (i = 0; i < servers->nelts; ++i) {
+        radius_server_t *rs = &rss[i];
+        for (j = 0; j < ARR_LEN(rs->req_queue); ++j) {
+            radius_req_t *req = &rs->req_queue[j];
+            ngx_connection_t *c = create_radius_connection(rs->sockaddr,
+                                                           rs->socklen, log);
+            if (c == NULL) {
+                destroy_radius_servers(servers, log);
+                return NGX_ERROR;
+            }
+            req->conn = c;
+            c->data = req;
+            req->rs = rs;
+        }
+    }
+
+    return NGX_OK;
+}
+
+static void
+destroy_radius_servers(ngx_array_t* servers, ngx_log_t *log)
+{
+    if (servers == NULL) {
+        LOG_EMERG(log, 0, "no radius servers");
+        return;
+    }
+
+    size_t i, j;
+    radius_server_t *rss = servers->elts;
+    for (i = 0; i < servers->nelts; ++i) {
+        radius_server_t *rs = &rss[i];
+        for (j = 0; j < ARR_LEN(rs->req_queue); ++j) {
+           radius_req_t *req = &rs->req_queue[j];
+            if (req->conn) {
+                close_radius_connection(req->conn);
+                req->conn = NULL;
+                req->rs = NULL;
+            }
+        }
+    }
+
+    // No need to free the array, since the pool
+    // should free it automatically
+}
+
 static ngx_connection_t *
 create_radius_connection(struct sockaddr *sockaddr,
                          socklen_t socklen,
@@ -652,6 +707,50 @@ select_radius_server(ngx_http_request_t *r,
     }
 
     return NGX_AGAIN;
+}
+
+static ngx_int_t
+send_radius_request(ngx_http_request_t *r,
+                    ngx_http_auth_radius_main_conf_t *mcf,
+                    ngx_http_auth_radius_ctx_t *ctx,
+                    radius_req_t *req)
+{
+    ngx_log_t *log = r->connection->log;
+
+    LOG_DEBUG(log, "r: 0x%xl", r);
+
+    // Send RADIUS Auth request
+    int rc = send_radius_pkg(req,
+                             &r->headers_in.user,
+                             &r->headers_in.passwd,
+                             mcf->timeout,
+                             log);
+    if (rc == -1) {
+        LOG_ERR(log, 0, "req failed req: 0x%xl, r: 0x%xl", req, r);
+        return NGX_ERROR;
+    }
+
+    LOG_DEBUG(log,
+            "r: 0x%xl, req: 0x%xl, req_id: %d",
+            r, req, req->ident);
+
+    return NGX_AGAIN;
+}
+
+static ngx_int_t
+set_realm(ngx_http_request_t *r, const ngx_str_t *realm)
+{
+    r->headers_out.www_authenticate = ngx_list_push(&r->headers_out.headers);
+    if (r->headers_out.www_authenticate == NULL) {
+        return NGX_HTTP_INTERNAL_SERVER_ERROR;
+    }
+
+    r->headers_out.www_authenticate->hash = 1;
+    r->headers_out.www_authenticate->key.len = sizeof("WWW-Authenticate") - 1;
+    r->headers_out.www_authenticate->key.data = (uint8_t *) "WWW-Authenticate";
+    r->headers_out.www_authenticate->value = *realm;
+
+    return NGX_HTTP_UNAUTHORIZED;
 }
 
 static radius_req_t *
@@ -855,103 +954,4 @@ auth_done:
     // Post RADIUS Auth done event
     ngx_post_event(r->connection->write, &ngx_posted_events);
     release_radius_req(req);
-}
-
-static ngx_int_t
-send_radius_request(ngx_http_request_t *r,
-                    ngx_http_auth_radius_main_conf_t *mcf,
-                    ngx_http_auth_radius_ctx_t *ctx,
-                    radius_req_t *req)
-{
-    ngx_log_t *log = r->connection->log;
-
-    LOG_DEBUG(log, "r: 0x%xl", r);
-
-    // Send RADIUS Auth request
-    int rc = send_radius_pkg(req,
-                             &r->headers_in.user,
-                             &r->headers_in.passwd,
-                             mcf->timeout,
-                             log);
-    if (rc == -1) {
-        LOG_ERR(log, 0, "req failed req: 0x%xl, r: 0x%xl", req, r);
-        return NGX_ERROR;
-    }
-
-    LOG_DEBUG(log,
-            "r: 0x%xl, req: 0x%xl, req_id: %d",
-            r, req, req->ident);
-
-    return NGX_AGAIN;
-}
-
-static ngx_int_t
-set_realm(ngx_http_request_t *r, const ngx_str_t *realm)
-{
-    r->headers_out.www_authenticate = ngx_list_push(&r->headers_out.headers);
-    if (r->headers_out.www_authenticate == NULL) {
-        return NGX_HTTP_INTERNAL_SERVER_ERROR;
-    }
-
-    r->headers_out.www_authenticate->hash = 1;
-    r->headers_out.www_authenticate->key.len = sizeof("WWW-Authenticate") - 1;
-    r->headers_out.www_authenticate->key.data = (uint8_t *) "WWW-Authenticate";
-    r->headers_out.www_authenticate->value = *realm;
-
-    return NGX_HTTP_UNAUTHORIZED;
-}
-
-static ngx_int_t
-init_radius_servers(ngx_array_t *servers, ngx_log_t *log)
-{
-    if (servers == NULL) {
-        LOG_EMERG(log, 0, "no radius servers");
-        return NGX_ERROR;
-    }
-
-    size_t i, j;
-    radius_server_t *rss = servers->elts;
-    for (i = 0; i < servers->nelts; ++i) {
-        radius_server_t *rs = &rss[i];
-        for (j = 0; j < ARR_LEN(rs->req_queue); ++j) {
-            radius_req_t *req = &rs->req_queue[j];
-            ngx_connection_t *c = create_radius_connection(rs->sockaddr,
-                                                           rs->socklen, log);
-            if (c == NULL) {
-                destroy_radius_servers(servers, log);
-                return NGX_ERROR;
-            }
-            req->conn = c;
-            c->data = req;
-            req->rs = rs;
-        }
-    }
-
-    return NGX_OK;
-}
-
-static void
-destroy_radius_servers(ngx_array_t* servers, ngx_log_t *log)
-{
-    if (servers == NULL) {
-        LOG_EMERG(log, 0, "no radius servers");
-        return;
-    }
-
-    size_t i, j;
-    radius_server_t *rss = servers->elts;
-    for (i = 0; i < servers->nelts; ++i) {
-        radius_server_t *rs = &rss[i];
-        for (j = 0; j < ARR_LEN(rs->req_queue); ++j) {
-           radius_req_t *req = &rs->req_queue[j];
-            if (req->conn) {
-                close_radius_connection(req->conn);
-                req->conn = NULL;
-                req->rs = NULL;
-            }
-        }
-    }
-
-    // No need to free the array, since the pool
-    // should free it automatically
 }
