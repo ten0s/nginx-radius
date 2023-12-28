@@ -10,7 +10,10 @@
 #define RADIUS_ATTR_NAS_PORT            5
 #define RADIUS_ATTR_NAS_IDENTIFIER      32
 
-#define RADIUS_ATTR_DESC_ITEM(t, lmin, lmax) .type = t, .len_min =  lmin, .len_max = lmax
+#define RADIUS_ATTR_DESC_ITEM(t, lmin, lmax) \
+    .type = t,                               \
+    .len_min = lmin,                         \
+    .len_max = lmax
 
 static radius_attr_desc_t attrs_desc[] = {
     [RADIUS_ATTR_USER_NAME] {
