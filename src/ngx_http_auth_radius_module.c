@@ -49,9 +49,8 @@ typedef struct {
 } ngx_http_auth_radius_loc_conf_t;
 
 typedef struct {
-    uint8_t digest[32];
-    uint8_t retries;
     radius_req_t *req;
+    uint8_t retries;
     uint8_t done:1;
     uint8_t accepted:1;
     uint8_t timedout:1;
