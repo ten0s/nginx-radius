@@ -2,9 +2,7 @@
 #define __RADIUS_LIB_H__
 
 #define RADIUS_SERVER_MAGIC_HDR 0x55AA00FF
-#define RADIUS_PKG_MAX  1024
-
-#define RADIUS_STR_INIT(str) .s = str, .len = strlen(str)
+#define RADIUS_PKG_MAX 1024
 
 typedef struct radius_auth_t {
     uint8_t         d[16];
