@@ -134,7 +134,7 @@ create_radius_pkg(void *buf, size_t len,
 }
 
 int
-parse_radius_pkg(void *buf, size_t len,
+parse_radius_pkg(const void *buf, size_t len,
                  uint8_t ident,
                  const ngx_str_t *secret,
                  const uint8_t *auth)
