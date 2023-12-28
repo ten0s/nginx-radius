@@ -519,8 +519,7 @@ ngx_http_auth_radius_handler(ngx_http_request_t *r)
 
         radius_req_t *req = acquire_radius_req(rs, log);
         if (req == NULL) {
-            LOG_ERR(log, 0, "req not available, retrying...");
-
+            LOG_NOTICE(log, 0, "requests queue is full, retrying...");
             // TODO: log message about increasing 'queue_size'
 
             // Subscribe to retry timeout event

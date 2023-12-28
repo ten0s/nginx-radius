@@ -1,5 +1,5 @@
 
-#define RADIUS_DEFAULT_PORT             1812
+#define RADIUS_DEFAULT_PORT 1812
 
 typedef struct {
     uint16_t len;
@@ -28,9 +28,10 @@ typedef struct radius_server_s {
     radius_str_t secret;
     radius_str_t nas_id;
 
-    // Effectively, the number of concurrent requests
-    // TODO: get it from server config
-    radius_req_t req_queue[10/*UCHAR_MAX + 1*/];
+    // Effectively, the number of concurrent requests can be processed
+    // without retrying. See ngx_http_auth_radius_handler.
+    // TODO: get 'queue_size' [1..255] from server config
+    radius_req_t req_queue[10];
     radius_req_t *req_free_list;
     radius_req_t *req_last_list;
 } radius_server_t;
