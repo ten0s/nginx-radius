@@ -173,7 +173,7 @@ static void
 init_radius_pkg(radius_pkg_builder_t *b, void *buf, int len)
 {
     b->pkg = buf;
-    assert(len == RADIUS_PKG_MAX); // TODO
+    assert(len == RADIUS_PKG_MAX);
     b->pos = b->pkg->attrs;
 }
 

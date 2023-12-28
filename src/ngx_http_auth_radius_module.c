@@ -2,7 +2,6 @@
 #include <ngx_config.h>
 #include <ngx_core.h>
 #include <ngx_http.h>
-#include <ngx_md5.h>
 #include "logger.h"
 #include "radius_lib.h"
 
@@ -436,7 +435,7 @@ radius_read_handler(ngx_event_t *ev)
     radius_server_t *rs = req->rs;
     int rc = recv_radius_pkg(req, rs, log);
     if (rc == -1) {
-        LOG_ERR(log, 0, "bad req, r: 0x%xl", r);
+        LOG_ERR(log, 0, "recv radius pkg: bad req, r: 0x%xl", r);
         return;
     }
 
