@@ -29,7 +29,6 @@ typedef struct radius_server_s {
     socklen_t socklen;
     ngx_str_t secret;
     ngx_str_t nas_id;
-
     // Effectively, the number of concurrent requests that can be
     // processed without retrying. See ngx_http_auth_radius_handler.
     // TODO: get 'queue_size' [1..255] from server config
