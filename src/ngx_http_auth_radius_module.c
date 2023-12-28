@@ -43,7 +43,7 @@ typedef struct radius_server_s {
 typedef struct {
     ngx_array_t *servers;
     ngx_msec_t timeout;
-    ngx_uint_t attempts;
+    ngx_uint_t retries;
     ngx_str_t secret;
 } ngx_http_auth_radius_main_conf_t;
 
@@ -53,7 +53,7 @@ typedef struct {
 
 typedef struct {
     uint8_t digest[32];
-    uint8_t attempts;
+    uint8_t retries;
     radius_req_t *req;
     uint8_t done:1;
     uint8_t accepted:1;
@@ -87,7 +87,7 @@ ngx_http_auth_radius_set_radius_timeout(ngx_conf_t *cf,
                                         void *conf);
 
 static char*
-ngx_http_auth_radius_set_radius_attempts(ngx_conf_t *cf,
+ngx_http_auth_radius_set_radius_retries(ngx_conf_t *cf,
                                          ngx_command_t *cmd,
                                          void *conf);
 
@@ -124,9 +124,9 @@ static ngx_command_t ngx_http_auth_radius_commands[] = {
       0,
       NULL },
 
-    { ngx_string("radius_attempts"),
+    { ngx_string("radius_retries"),
       NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_CONF_TAKE1,
-      ngx_http_auth_radius_set_radius_attempts,
+      ngx_http_auth_radius_set_radius_retries,
       0,
       0,
       NULL },
@@ -260,7 +260,7 @@ add_radius_server(radius_server_t *rs,
 }
 
 radius_req_t *
-acquire_radius_req(radius_server_t* rs, ngx_log_t *log)
+acquire_radius_req(radius_server_t* rs)
 {
     radius_req_t *req = rs->req_free_list;
     if (req) {
@@ -274,12 +274,9 @@ acquire_radius_req(radius_server_t* rs, ngx_log_t *log)
 }
 
 void
-release_radius_req(radius_req_t *req, ngx_log_t *log)
+release_radius_req(radius_req_t *req)
 {
     radius_server_t *rs = req->rs;
-    LOG_DEBUG(log, "req: 0x%xl, r: 0x%xl, req_id: %d",
-              req, req->http_req, req->ident);
-
     req->active = 0;
     req->next = NULL;
     req->http_req = NULL;
@@ -407,7 +404,7 @@ radius_read_handler(ngx_event_t *ev)
     ctx = ngx_http_get_module_ctx(r, ngx_http_auth_radius_module);
     if (ctx == NULL) {
         LOG_EMERG(log, 0, "ctx not found, r: 0x%xl", r);
-        release_radius_req(req, log);
+        release_radius_req(req);
         return;
     }
 
@@ -415,10 +412,10 @@ radius_read_handler(ngx_event_t *ev)
 
     if (ev->timedout) {
         ev->timedout = 0;
-        ctx->attempts--;
-        LOG_DEBUG(log, "timeout r: 0x%xl, attempt: %d", r, ctx->attempts);
+        ctx->retries--;
+        LOG_DEBUG(log, "timeout r: 0x%xl, retries: %d", r, ctx->retries);
 
-        if (!ctx->attempts) {
+        if (!ctx->retries) {
             ctx->done = 1;
             ctx->accepted = 0;
             ctx->timedout = 1;
@@ -456,7 +453,7 @@ radius_read_handler(ngx_event_t *ev)
 auth_done:
     // Post RADIUS Auth done event
     ngx_post_event(r->connection->write, &ngx_posted_events);
-    release_radius_req(req, log);
+    release_radius_req(req);
 }
 
 static ngx_int_t
@@ -540,7 +537,7 @@ ngx_http_auth_radius_handler(ngx_http_request_t *r)
         radius_server_t *rss = mcf->servers->elts;
         radius_server_t *rs = &rss[0];
 
-        radius_req_t *req = acquire_radius_req(rs, log);
+        radius_req_t *req = acquire_radius_req(rs);
         if (req == NULL) {
             LOG_NOTICE(log, 0, "requests queue is full, retrying...");
             // TODO: log message about increasing 'queue_size'
@@ -576,10 +573,11 @@ ngx_http_auth_radius_handler(ngx_http_request_t *r)
             return NGX_ERROR;
         }
 
-        ctx->attempts = mcf->attempts;
+        ctx->retries = mcf->retries;
         ctx->done = 0;
         ctx->accepted = 0;
         ctx->timedout = 0;
+        ctx->error = 0;
         ngx_http_set_ctx(r, ctx, ngx_http_auth_radius_module);
 
         LOG_DEBUG(log, "req: 0x%xl, req_id: %d", req, req->ident);
@@ -740,8 +738,8 @@ ngx_http_auth_radius_create_main_conf(ngx_conf_t *cf)
         return NGX_CONF_ERROR;
     }
 
-    mcf->attempts = NGX_CONF_UNSET;
-    mcf->timeout = NGX_CONF_UNSET_MSEC;
+    mcf->timeout = 5000;
+    mcf->retries = 3;
 
     return mcf;
 }
@@ -820,7 +818,8 @@ ngx_http_auth_radius_set_radius_server(ngx_conf_t *cf,
 
     int rs_id = mcf->servers->nelts;
     add_radius_server(rs, rs_id,
-                      u.addrs[0].sockaddr, u.addrs[0].socklen,
+                      u.addrs[0].sockaddr,
+                      u.addrs[0].socklen,
                       secret, nas_id);
 
     return NGX_CONF_OK;
@@ -843,13 +842,14 @@ ngx_http_auth_radius_set_radius_timeout(ngx_conf_t *cf,
                        &value[1]);
         return NGX_CONF_ERROR;
     }
+
     mcf->timeout = timeout;
 
     return NGX_CONF_OK;
 }
 
 static char*
-ngx_http_auth_radius_set_radius_attempts(ngx_conf_t *cf,
+ngx_http_auth_radius_set_radius_retries(ngx_conf_t *cf,
                                          ngx_command_t *cmd,
                                          void *conf)
 {
@@ -858,14 +858,15 @@ ngx_http_auth_radius_set_radius_attempts(ngx_conf_t *cf,
     ngx_http_auth_radius_main_conf_t* mcf =
         ngx_http_conf_get_module_main_conf(cf, ngx_http_auth_radius_module);
 
-    ngx_int_t attempts = ngx_atoi(value[1].data, value[1].len);
-    if (attempts == NGX_ERROR) {
+    ngx_int_t retries = ngx_atoi(value[1].data, value[1].len);
+    if (retries == NGX_ERROR) {
         CONF_LOG_EMERG(cf, ngx_errno,
-                       "invalid \"radius_attempts\" value: \"%V\"",
+                       "invalid \"radius_retries\" value: \"%V\"",
                        &value[1]);
         return NGX_CONF_ERROR;
     }
-    mcf->attempts = attempts;
+
+    mcf->retries = retries;
 
     return NGX_CONF_OK;
 }

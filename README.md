@@ -17,10 +17,10 @@ Build:
     radius_server       127.0.0.1:1812 "secret" "nas-identifier";
         - Address, secret and nas-identifier of radius server. Can be several servers.
 
-    radius_timeout      1s;
+    radius_timeout      5s;
         - Timeout for radius requests.
 
-    radius_attempts     3;
+    radius_retries      3;
         - Attempts count for radius requests.
 
     auth_radius     "realm" | off;
