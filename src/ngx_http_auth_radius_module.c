@@ -139,10 +139,10 @@ ngx_module_t ngx_http_auth_radius_module = {
 #define RADIUS_STR_FROM_NGX_STR_INITIALIZER(ns) .len = ns.len, .s = ns.data
 
 static void
-radius_read_handler(ngx_event_t *rev);
+radius_read_handler(ngx_event_t *ev);
 
 static void
-radius_retry_handler(ngx_event_t *rev);
+radius_retry_handler(ngx_event_t *ev);
 
 static ngx_connection_t *
 create_radius_connection(struct sockaddr *sockaddr,
@@ -357,19 +357,19 @@ recv_radius_pkg(radius_req_t *req, radius_server_t *rs, ngx_log_t *log)
 }
 
 static void
-radius_retry_handler(ngx_event_t *tev)
+radius_retry_handler(ngx_event_t *ev)
 {
-    ngx_http_request_t *r = tev->data;
+    ngx_http_request_t *r = ev->data;
     ngx_post_event(r->connection->write, &ngx_posted_events);
 }
 
 static void
-radius_read_handler(ngx_event_t *rev)
+radius_read_handler(ngx_event_t *ev)
 {
-    ngx_log_t *log = rev->log;
+    ngx_log_t *log = ev->log;
     assert(log != NULL);
 
-    ngx_connection_t *c = rev->data;
+    ngx_connection_t *c = ev->data;
     radius_req_t *req = c->data;
     ngx_http_request_t *r = req->http_req;
     assert(r != NULL);
@@ -384,8 +384,8 @@ radius_read_handler(ngx_event_t *rev)
 
     assert(ctx->req == req);
 
-    if (rev->timedout) {
-        rev->timedout = 0;
+    if (ev->timedout) {
+        ev->timedout = 0;
         ctx->attempts--;
         LOG_DEBUG(log, "timeout r: 0x%xl, attempt: %d", r, ctx->attempts);
 
@@ -524,14 +524,15 @@ ngx_http_auth_radius_handler(ngx_http_request_t *r)
             // TODO: log message about increasing 'queue_size'
 
             // Subscribe to retry timeout event
-            ngx_event_t *tev = ngx_pcalloc(r->pool, sizeof(ngx_event_t));
-            if (tev == NULL) {
+            ngx_event_t *ev = ngx_pcalloc(r->pool, sizeof(ngx_event_t));
+            if (ev == NULL) {
                 LOG_ERR(log, ngx_errno, "ngx_pcalloc failed r: 0x%xl", r);
                 return NGX_ERROR;
             }
-            tev->data = r;
-            tev->handler = radius_retry_handler;
-            ngx_add_timer(tev, 100);
+            ev->data = r;
+            ev->handler = radius_retry_handler;
+            ev->log = r->connection->log;
+            ngx_add_timer(ev, 100);
 
             return NGX_AGAIN;
         }
