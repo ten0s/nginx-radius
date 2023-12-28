@@ -21,7 +21,7 @@ typedef struct {
 } ngx_http_auth_radius_loc_conf_t;
 
 typedef struct {
-    u_char digest[32];
+    uint8_t digest[32];
     uint8_t attempts;
     radius_req_t *req;
     uint8_t done:1;
@@ -273,7 +273,7 @@ send_radius_pkg(radius_req_t *req,
                 ngx_msec_t timeout,
                 ngx_log_t *log)
 {
-    u_char buf[RADIUS_PKG_MAX];
+    uint8_t buf[RADIUS_PKG_MAX];
     size_t len = create_radius_pkg(buf, sizeof(buf),
                                    req->ident,
                                    user, passwd,
@@ -304,7 +304,7 @@ recv_radius_pkg(radius_req_t *req, radius_server_t *rs, ngx_log_t *log)
         ngx_del_timer(req->conn->read);
     }
 
-    u_char buf[RADIUS_PKG_MAX];
+    uint8_t buf[RADIUS_PKG_MAX];
     ssize_t len = recv(req->conn->fd, buf, sizeof(buf), MSG_TRUNC);
     if (len == -1) {
         LOG_ERR(log, ngx_errno, "recv failed, req: 0x%xl, r: 0x%xl",
@@ -338,7 +338,7 @@ recv_radius_pkg(radius_req_t *req, radius_server_t *rs, ngx_log_t *log)
     ngx_md5_init(&ctx);
 
     char save_auth[sizeof(pkg->hdr.auth)];
-    unsigned char check[sizeof(pkg->hdr.auth)];
+    uint8_t check[sizeof(pkg->hdr.auth)];
 
     ngx_memcpy(save_auth, &pkg->hdr.auth, sizeof(save_auth));
     ngx_memcpy(&pkg->hdr.auth, &req->auth, sizeof(pkg->hdr.auth));
@@ -487,7 +487,7 @@ ngx_http_auth_radius_set_realm(ngx_http_request_t *r,
 
     r->headers_out.www_authenticate->hash = 1;
     r->headers_out.www_authenticate->key.len = sizeof("WWW-Authenticate") - 1;
-    r->headers_out.www_authenticate->key.data = (u_char *) "WWW-Authenticate";
+    r->headers_out.www_authenticate->key.data = (uint8_t *) "WWW-Authenticate";
     r->headers_out.www_authenticate->value = *realm;
 
     return NGX_HTTP_UNAUTHORIZED;
@@ -877,7 +877,7 @@ ngx_http_auth_radius_set_auth_radius(ngx_conf_t *cf,
         return NGX_CONF_ERROR;
     }
 
-    u_char *p;
+    uint8_t *p;
     p = ngx_cpymem(lcf->realm.data,
                    "Basic realm=\"",
                    sizeof("Basic realm=\"") - 1);

@@ -3,7 +3,7 @@
 
 typedef struct {
     uint16_t len;
-    u_char* s;
+    uint8_t *s;
 } radius_str_t;
 
 struct radius_server_s;
@@ -11,7 +11,7 @@ struct radius_server_s;
 typedef struct radius_req_s {
     // Should be big enough to address req_queue
     uint8_t ident;
-    u_char auth[16];
+    uint8_t auth[16];
     uint8_t active:1;
     uint8_t accepted:1;
     struct radius_server_s *rs;
@@ -43,4 +43,4 @@ create_radius_pkg(void *buf, size_t len,
                   radius_str_t *passwd,
                   radius_str_t *secret,
                   radius_str_t *nas_id,
-                  unsigned char *auth);
+                  uint8_t *auth);

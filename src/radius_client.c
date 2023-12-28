@@ -65,7 +65,7 @@ create_radius_pkg(void *buf, size_t len,
                   radius_str_t *passwd,
                   radius_str_t *secret,
                   radius_str_t *nas_id,
-                  unsigned char *auth)
+                  uint8_t *auth)
 {
     radius_pkg_builder_t b;
 
@@ -78,7 +78,7 @@ create_radius_pkg(void *buf, size_t len,
 
     update_pkg_len(&b);
 
-    return b.pos - (unsigned char *)b.pkg;
+    return b.pos - (uint8_t *)b.pkg;
 }
 
 static void
@@ -94,7 +94,7 @@ gen_authenticator(radius_auth_t *auth)
 {
     uint8_t i;
     for(i = 0; i < sizeof(radius_auth_t); i++) {
-        auth->d[i] = (unsigned char)(random() & UCHAR_MAX);
+        auth->d[i] = (uint8_t)(random() & UCHAR_MAX);
     }
 }
 
@@ -148,8 +148,8 @@ put_passwd_crypt(radius_pkg_builder_t *b,
 
     uint8_t pwd_remain = passwd->len;
     uint8_t pwd_padded_remain = pwd_padded_len;
-    u_char *p = passwd->s;
-    u_char *c = b->pos;
+    uint8_t *p = passwd->s;
+    uint8_t *c = b->pos;
 
     ah->len = sizeof(radius_attr_hdr_t) + pwd_padded_remain;
 
@@ -250,7 +250,7 @@ make_access_request_pkg(radius_pkg_builder_t *b,
 static radius_error_t
 update_pkg_len(radius_pkg_builder_t *b)
 {
-    uint16_t l = b->pos - (unsigned char*) &b->pkg->hdr;
-    b->pkg->hdr.len = htons(l);
+    uint16_t len = b->pos - (uint8_t *) &b->pkg->hdr;
+    b->pkg->hdr.len = htons(len);
     return radius_err_ok;
 }

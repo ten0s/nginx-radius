@@ -7,7 +7,7 @@
 #define RADIUS_STR_INIT(str) .s = str, .len = strlen(str)
 
 typedef struct radius_auth_t {
-    unsigned char   d[16];
+    uint8_t         d[16];
 } radius_auth_t;
 
 typedef struct radius_hdr_t {
@@ -24,12 +24,12 @@ typedef struct radius_attr_hdr_t {
 
 typedef struct radius_pkg_t {
     radius_hdr_t    hdr;
-    unsigned char   attrs[RADIUS_PKG_MAX - sizeof(radius_hdr_t)];
+    uint8_t         attrs[RADIUS_PKG_MAX - sizeof(radius_hdr_t)];
 } radius_pkg_t;
 
 typedef struct radius_pkg_builder_t {
     radius_pkg_t   *pkg;
-    unsigned char  *pos;
+    uint8_t        *pos;
 } radius_pkg_builder_t;
 
 typedef enum {
@@ -48,7 +48,7 @@ typedef enum {
 
 typedef struct radius_attr_chap_passwd_t {
     uint8_t chap_ident;
-    unsigned char chap_data[16];
+    uint8_t chap_data[16];
 } radius_attr_chap_passwd_t;
 
 typedef struct radius_attr_desc_t {
