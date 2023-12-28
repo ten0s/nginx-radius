@@ -2,7 +2,6 @@
 #include <ngx_http.h>
 #include <ngx_md5.h>
 #include "radius_lib.h"
-#include "radius_client.h"
 
 #define RADIUS_ATTR_USER_NAME           1
 #define RADIUS_ATTR_USER_PASSWORD       2

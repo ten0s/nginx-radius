@@ -5,7 +5,6 @@
 #include <ngx_md5.h>
 #include "logger.h"
 #include "radius_lib.h"
-#include "radius_client.h"
 
 #define ARR_LEN(arr) sizeof(arr)/sizeof(arr[0])
 

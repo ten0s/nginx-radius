@@ -62,4 +62,13 @@ typedef struct radius_attr_desc_t {
 #define RADIUS_CODE_ACCESS_REJECT       3
 #define RADIUS_CODE_ACCESS_CHALLENGE    4
 
+size_t
+create_radius_pkg(void *buf, size_t len,
+                  uint8_t ident,
+                  const ngx_str_t *user,
+                  const ngx_str_t *passwd,
+                  const ngx_str_t *secret,
+                  const ngx_str_t *nas_id,
+                  uint8_t *auth);
+
 #endif // __RADIUS_LIB_H__
