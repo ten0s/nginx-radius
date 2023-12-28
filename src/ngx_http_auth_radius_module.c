@@ -81,12 +81,12 @@ static char *
 ngx_http_auth_radius_set_radius_server(ngx_conf_t *cf,
                                        ngx_command_t *cmd,
                                        void *conf);
-static char*
+static char *
 ngx_http_auth_radius_set_radius_timeout(ngx_conf_t *cf,
                                         ngx_command_t *cmd,
                                         void *conf);
 
-static char*
+static char *
 ngx_http_auth_radius_set_radius_retries(ngx_conf_t *cf,
                                          ngx_command_t *cmd,
                                          void *conf);
@@ -240,7 +240,6 @@ add_radius_server(radius_server_t *rs,
                   const ngx_str_t *secret,
                   const ngx_str_t *nas_id)
 {
-    rs->magic = RADIUS_SERVER_MAGIC_HDR;
     rs->id = rs_id;
     rs->sockaddr = sockaddr;
     rs->socklen = socklen;
@@ -344,41 +343,39 @@ recv_radius_pkg(radius_req_t *req, radius_server_t *rs, ngx_log_t *log)
         return -1;
     }
 
-    // TODO: move to radius_lib
-    radius_pkg_t *pkg = (radius_pkg_t *) buf;
-    uint16_t pkg_len = ntohs(pkg->hdr.len);
-    if (len != pkg_len) {
-        LOG_ERR(log, 0, "incorrect pkg len: %d vs %d, req: 0x%xl, r: 0x%xl",
-                len, pkg_len, req, req->http_req);
+    int rc = parse_radius_pkg(buf, len,
+                              req->ident,
+                              &req->rs->secret,
+                              req->auth);
+    if (rc < 0) {
+        switch (rc) {
+        case -1:
+            LOG_ERR(log, 0,
+                    "parse pkg error: incorrect pkg len: %d, req: 0x%xl, r: 0x%xl",
+                    len, req, req->http_req);
+            break;
+        case -2:
+            LOG_ERR(log, 0,
+                    "parse pkg error: req id doesn't match, req: 0x%xl, r: 0x%xl",
+                    req, req->http_req);
+            break;
+        case -3:
+            LOG_ERR(log, 0,
+                    "parse pkg error: incorrect auth, req: 0x%xl, r: 0x%xl",
+                    req, req->http_req);
+            break;
+        default:
+            LOG_ERR(log, 0,
+                    "parse pkg error: unknown rc: %d, req: 0x%xl, r: 0x%xl",
+                    rc, req, req->http_req);
+            break;
+        }
+
         return -1;
     }
 
-    // Check correlation id matches
-    if (req->ident != pkg->hdr.ident) {
-        LOG_ERR(log, 0, "req id doesn't match, req: 0x%xl, r: 0x%xl",
-                req, req->http_req);
-        return -1;
-    }
+    req->accepted = rc == RADIUS_CODE_ACCESS_ACCEPT;
 
-    ngx_md5_t ctx;
-    ngx_md5_init(&ctx);
-
-    char save_auth[sizeof(pkg->hdr.auth)];
-    uint8_t check[sizeof(pkg->hdr.auth)];
-
-    ngx_memcpy(save_auth, &pkg->hdr.auth, sizeof(save_auth));
-    ngx_memcpy(&pkg->hdr.auth, &req->auth, sizeof(pkg->hdr.auth));
-    ngx_md5_update(&ctx, pkg, len);
-    ngx_md5_update(&ctx, rs->secret.data, rs->secret.len);
-    ngx_md5_final(check, &ctx);
-
-    if (ngx_memcmp(save_auth, check, sizeof(save_auth)) != 0) {
-        LOG_ERR(log, 0, "incorrect auth, req: 0x%0xl, r: 0x%xl",
-                req, req->http_req);
-        return -1;
-    }
-
-    req->accepted = pkg->hdr.code == RADIUS_CODE_ACCESS_ACCEPT;
     return 0;
 }
 

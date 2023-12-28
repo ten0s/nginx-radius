@@ -1,7 +1,57 @@
 #include <assert.h>
-#include <ngx_http.h>
 #include <ngx_md5.h>
 #include "radius_lib.h"
+
+typedef struct radius_auth_t {
+    uint8_t         d[16];
+} radius_auth_t;
+
+typedef struct radius_hdr_t {
+    uint8_t         code;
+    uint8_t         ident;
+    uint16_t        len;
+    radius_auth_t   auth;
+} radius_hdr_t;
+
+typedef struct radius_attr_hdr_t {
+    uint8_t         type;
+    uint8_t         len;
+} radius_attr_hdr_t;
+
+typedef struct radius_pkg_t {
+    radius_hdr_t    hdr;
+    uint8_t         attrs[RADIUS_PKG_MAX - sizeof(radius_hdr_t)];
+} radius_pkg_t;
+
+typedef struct radius_pkg_builder_t {
+    radius_pkg_t   *pkg;
+    uint8_t        *pos;
+} radius_pkg_builder_t;
+
+typedef enum {
+    radius_attr_type_str,
+    radius_attr_type_address,
+    radius_attr_type_integer,
+    radius_attr_type_time,
+    radius_attr_type_chap_passwd,
+} radius_attr_type_t;
+
+typedef enum {
+    radius_err_ok,
+    radius_err_range,
+    radius_err_mem,
+} radius_error_t;
+
+typedef struct radius_attr_chap_passwd_t {
+    uint8_t chap_ident;
+    uint8_t chap_data[16];
+} radius_attr_chap_passwd_t;
+
+typedef struct radius_attr_desc_t {
+    radius_attr_type_t type;
+    uint8_t            len_min;
+    uint8_t            len_max;
+} radius_attr_desc_t;
 
 #define RADIUS_ATTR_USER_NAME           1
 #define RADIUS_ATTR_USER_PASSWORD       2
@@ -81,6 +131,42 @@ create_radius_pkg(void *buf, size_t len,
     update_pkg_len(&b);
 
     return b.pos - (uint8_t *)b.pkg;
+}
+
+int
+parse_radius_pkg(void *buf, size_t len,
+                 uint8_t ident,
+                 const ngx_str_t *secret,
+                 const uint8_t *auth)
+{
+    radius_pkg_t *pkg = (radius_pkg_t *) buf;
+    uint16_t pkg_len = ntohs(pkg->hdr.len);
+    if (len != pkg_len) {
+        return -1;
+    }
+
+    // Check correlation id matches
+    if (ident != pkg->hdr.ident) {
+        return -2;
+    }
+
+    ngx_md5_t ctx;
+    ngx_md5_init(&ctx);
+
+    char save_auth[sizeof(pkg->hdr.auth)];
+    uint8_t check[sizeof(pkg->hdr.auth)];
+
+    ngx_memcpy(save_auth, &pkg->hdr.auth, sizeof(save_auth));
+    ngx_memcpy(&pkg->hdr.auth, auth, sizeof(pkg->hdr.auth));
+    ngx_md5_update(&ctx, pkg, len);
+    ngx_md5_update(&ctx, secret->data, secret->len);
+    ngx_md5_final(check, &ctx);
+
+    if (ngx_memcmp(save_auth, check, sizeof(save_auth)) != 0) {
+        return -3;
+    }
+
+    return pkg->hdr.code;
 }
 
 static void
