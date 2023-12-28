@@ -12,7 +12,6 @@
 struct radius_server_s;
 
 typedef struct radius_req_s {
-    // Should be big enough to address req_queue
     uint8_t ident;
     uint8_t auth[16];
     uint8_t active:1;
