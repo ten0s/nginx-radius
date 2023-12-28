@@ -204,7 +204,7 @@ close_radius_connection(ngx_connection_t *c)
 }
 
 static void
-radius_add_server(radius_server_t *rs,
+add_radius_server(radius_server_t *rs,
                   int rs_id,
                   struct sockaddr *sockaddr,
                   socklen_t socklen,
@@ -805,7 +805,7 @@ ngx_http_auth_radius_set_radius_server(ngx_conf_t *cf,
     }
 
     int rs_id = mcf->servers->nelts;
-    radius_add_server(rs, rs_id,
+    add_radius_server(rs, rs_id,
                       u.addrs[0].sockaddr, u.addrs[0].socklen,
                       &secret, &nas_id);
 
