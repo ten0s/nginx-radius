@@ -279,7 +279,7 @@ put_uint32_attr(radius_pkg_builder_t* b, int radius_attr_id, uint32_t value)
     ah->len = attr_len_need;
     b->pos += sizeof(radius_attr_hdr_t);
     uint32_t *v = (uint32_t *)b->pos;
-    *v = htobe32(value); // big-endian
+    *v = htobe32(value);
     b->pos += sizeof(value);
 
     return radius_err_ok;
@@ -328,6 +328,6 @@ static radius_error_t
 update_pkg_len(radius_pkg_builder_t *b)
 {
     uint16_t len = b->pos - (uint8_t *) &b->pkg->hdr;
-    b->pkg->hdr.len = htons(len);
+    b->pkg->hdr.len = htobe16(len);
     return radius_err_ok;
 }
