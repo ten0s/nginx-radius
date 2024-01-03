@@ -29,8 +29,10 @@ typedef struct radius_pkg_builder_t {
 } radius_pkg_builder_t;
 
 typedef enum {
-    radius_attr_type_str,
-    radius_attr_type_uint32,
+    // https://www.rfc-editor.org/rfc/rfc8044#section-3.1
+    radius_attr_type_integer,
+    // https://www.rfc-editor.org/rfc/rfc8044#section-3.5
+    radius_attr_type_string,
 } radius_attr_type_t;
 
 typedef enum {
@@ -59,17 +61,17 @@ typedef struct radius_attr_desc_t {
 
 static radius_attr_desc_t attrs_desc[] = {
     [RADIUS_ATTR_USER_NAME] {
-        RADIUS_ATTR_DESC_ITEM(radius_attr_type_str, 1, 61)
+        RADIUS_ATTR_DESC_ITEM(radius_attr_type_string, 1, 61)
     },
     [RADIUS_ATTR_USER_PASSWORD] {
-        RADIUS_ATTR_DESC_ITEM(radius_attr_type_str, 16, 128)
+        RADIUS_ATTR_DESC_ITEM(radius_attr_type_string, 16, 128)
     },
     [RADIUS_ATTR_SERVICE_TYPE] {
-        RADIUS_ATTR_DESC_ITEM(radius_attr_type_uint32,
+        RADIUS_ATTR_DESC_ITEM(radius_attr_type_integer,
                               sizeof(uint32_t), sizeof(uint32_t))
     },
     [RADIUS_ATTR_NAS_IDENTIFIER] {
-        RADIUS_ATTR_DESC_ITEM(radius_attr_type_str, 3, 64)
+        RADIUS_ATTR_DESC_ITEM(radius_attr_type_string, 3, 64)
     },
 };
 
@@ -249,7 +251,9 @@ put_passwd_crypt(radius_pkg_builder_t *b,
 }
 
 static int
-put_str_attr(radius_pkg_builder_t *b, int radius_attr_id, const ngx_str_t *str)
+put_string_attr(radius_pkg_builder_t *b,
+                int radius_attr_id,
+                const ngx_str_t *str)
 {
     radius_error_t rc = check_str_attr_range_mem(b, radius_attr_id, str->len);
     if (rc != radius_err_ok) {
@@ -267,7 +271,9 @@ put_str_attr(radius_pkg_builder_t *b, int radius_attr_id, const ngx_str_t *str)
 }
 
 static radius_error_t
-put_uint32_attr(radius_pkg_builder_t* b, int radius_attr_id, uint32_t value)
+put_integer_attr(radius_pkg_builder_t* b,
+                 int radius_attr_id,
+                 uint32_t value)
 {
     size_t remain = sizeof(b->pkg->attrs) - (b->pos - b->pkg->attrs);
     size_t attr_len_need = sizeof(radius_attr_hdr_t) + sizeof(value);
@@ -298,7 +304,7 @@ make_access_request_pkg(radius_pkg_builder_t *b,
     b->pkg->hdr.ident = ident;
 
     radius_error_t rc;
-    rc = put_str_attr(b, RADIUS_ATTR_USER_NAME, user);
+    rc = put_string_attr(b, RADIUS_ATTR_USER_NAME, user);
     if (rc != radius_err_ok) {
         return rc;
     }
@@ -308,14 +314,14 @@ make_access_request_pkg(radius_pkg_builder_t *b,
         return rc;
     }
 
-    rc = put_uint32_attr(b, RADIUS_ATTR_SERVICE_TYPE,
-                         RADIUS_AUTHENTICATE_ONLY);
+    rc = put_integer_attr(b, RADIUS_ATTR_SERVICE_TYPE,
+                          RADIUS_AUTHENTICATE_ONLY);
     if (rc != radius_err_ok) {
         return rc;
     }
 
     if (nas_id->len >= 3) {
-        rc = put_str_attr(b, RADIUS_ATTR_NAS_IDENTIFIER, nas_id);
+        rc = put_string_attr(b, RADIUS_ATTR_NAS_IDENTIFIER, nas_id);
         if (rc != radius_err_ok) {
             return rc;
         }
