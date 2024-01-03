@@ -871,7 +871,7 @@ recv_radius_pkg(radius_req_t *req,
         return -1;
     }
 
-    req->accepted = rc == RADIUS_CODE_ACCESS_ACCEPT;
+    req->accepted = rc == RADIUS_AUTH_ACCEPTED;
 
     return 0;
 }

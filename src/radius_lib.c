@@ -47,6 +47,12 @@ typedef struct radius_attr_desc_t {
     uint8_t            len_max;
 } radius_attr_desc_t;
 
+// Packet Types
+// https://www.rfc-editor.org/rfc/rfc2865#section-4
+#define RADIUS_CODE_ACCESS_REQUEST      1
+#define RADIUS_CODE_ACCESS_ACCEPT       2
+#define RADIUS_CODE_ACCESS_REJECT       3
+
 // Attributes
 // https://www.rfc-editor.org/rfc/rfc2865#section-5
 #define RADIUS_ATTR_USER_NAME           1
@@ -159,7 +165,11 @@ parse_radius_pkg(const void *buf, size_t len,
         return -3;
     }
 
-    return pkg->hdr.code;
+    if (pkg->hdr.code == RADIUS_CODE_ACCESS_ACCEPT) {
+        return RADIUS_AUTH_ACCEPTED;
+    } else {
+        return RADIUS_AUTH_REJECTED;
+    }
 }
 
 static void
