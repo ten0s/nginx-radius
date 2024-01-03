@@ -28,10 +28,10 @@ typedef struct radius_pkg_builder_t {
     uint8_t        *pos;
 } radius_pkg_builder_t;
 
+// Data Type Definitions
+// https://www.rfc-editor.org/rfc/rfc8044#section-3
 typedef enum {
-    // https://www.rfc-editor.org/rfc/rfc8044#section-3.1
     radius_attr_type_integer,
-    // https://www.rfc-editor.org/rfc/rfc8044#section-3.5
     radius_attr_type_string,
 } radius_attr_type_t;
 
@@ -47,6 +47,8 @@ typedef struct radius_attr_desc_t {
     uint8_t            len_max;
 } radius_attr_desc_t;
 
+// Attributes
+// https://www.rfc-editor.org/rfc/rfc2865#section-5
 #define RADIUS_ATTR_USER_NAME           1
 #define RADIUS_ATTR_USER_PASSWORD       2
 #define RADIUS_ATTR_SERVICE_TYPE        6
@@ -61,7 +63,7 @@ typedef struct radius_attr_desc_t {
 
 static radius_attr_desc_t attrs_desc[] = {
     [RADIUS_ATTR_USER_NAME] {
-        RADIUS_ATTR_DESC_ITEM(radius_attr_type_string, 1, 61)
+        RADIUS_ATTR_DESC_ITEM(radius_attr_type_string, 1, 63)
     },
     [RADIUS_ATTR_USER_PASSWORD] {
         RADIUS_ATTR_DESC_ITEM(radius_attr_type_string, 16, 128)
@@ -82,9 +84,13 @@ static void
 gen_authenticator(radius_auth_t *auth);
 
 static radius_error_t
-check_str_attr_range_mem(radius_pkg_builder_t *b,
-                         int radius_attr_id,
-                         uint16_t len);
+check_attr_len_needed(radius_pkg_builder_t *b,
+                      uint16_t len);
+
+static radius_error_t
+check_string_attr_len_range(radius_pkg_builder_t *b,
+                            int radius_attr_id,
+                            uint16_t len);
 
 static radius_error_t
 make_access_request_pkg(radius_pkg_builder_t *b,
@@ -174,22 +180,29 @@ gen_authenticator(radius_auth_t *auth)
 }
 
 static radius_error_t
-check_str_attr_range_mem(radius_pkg_builder_t *b,
-                         int radius_attr_id,
-                         uint16_t len)
+check_attr_len_needed(radius_pkg_builder_t *b,
+                      uint16_t len)
+{
+    size_t remain = sizeof(b->pkg->attrs) - (b->pos - b->pkg->attrs);
+    size_t attr_len_need = sizeof(radius_attr_hdr_t) + len;
+    if (attr_len_need > remain) {
+        return radius_err_mem;
+    }
+
+    return radius_err_ok;
+}
+
+static radius_error_t
+check_string_attr_len_range(radius_pkg_builder_t *b,
+                            int radius_attr_id,
+                            uint16_t len)
 {
     if (len < attrs_desc[radius_attr_id].len_min ||
         len > attrs_desc[radius_attr_id].len_max) {
         return radius_err_range;
     }
 
-    size_t remain = sizeof(b->pkg->attrs) - (b->pos - b->pkg->attrs);
-    size_t str_attr_len_need = sizeof(radius_attr_hdr_t) + len;
-    if (str_attr_len_need > remain) {
-        return radius_err_mem;
-    }
-
-    return radius_err_ok;
+    return check_attr_len_needed(b, len);
 }
 
 static radius_error_t
@@ -198,9 +211,9 @@ put_passwd_crypt(radius_pkg_builder_t *b,
                  const ngx_str_t *passwd)
 {
     uint8_t pwd_padded_len = 16 * (1 + passwd->len / 16);
-    radius_error_t rc = check_str_attr_range_mem(b,
-                                                 RADIUS_ATTR_USER_PASSWORD,
-                                                 pwd_padded_len);
+    radius_error_t rc = check_string_attr_len_range(b,
+                                                    RADIUS_ATTR_USER_PASSWORD,
+                                                    pwd_padded_len);
     if (rc != radius_err_ok) {
         return rc;
     }
@@ -229,7 +242,7 @@ put_passwd_crypt(radius_pkg_builder_t *b,
     ah->len = sizeof(radius_attr_hdr_t) + pwd_padded_remain;
 
     uint8_t i;
-    for(; pwd_padded_remain ;) {
+    while (pwd_padded_remain) {
         for(i = 0; i < 16; i++) {
             *c++ ^= pwd_remain ? *p++ : 0;
             if (pwd_remain) {
@@ -255,14 +268,16 @@ put_string_attr(radius_pkg_builder_t *b,
                 int radius_attr_id,
                 const ngx_str_t *str)
 {
-    radius_error_t rc = check_str_attr_range_mem(b, radius_attr_id, str->len);
+    radius_error_t rc = check_string_attr_len_range(b,
+                                                    radius_attr_id,
+                                                    str->len);
     if (rc != radius_err_ok) {
         return rc;
     }
 
     radius_attr_hdr_t *ah = (radius_attr_hdr_t *) b->pos;
     ah->type = radius_attr_id;
-    ah->len = str->len + sizeof(radius_attr_hdr_t);
+    ah->len = sizeof(radius_attr_hdr_t) + str->len;
     b->pos += sizeof(radius_attr_hdr_t);
     ngx_memcpy(b->pos, str->data, str->len);
     b->pos += str->len;
@@ -275,14 +290,14 @@ put_integer_attr(radius_pkg_builder_t* b,
                  int radius_attr_id,
                  uint32_t value)
 {
-    size_t remain = sizeof(b->pkg->attrs) - (b->pos - b->pkg->attrs);
-    size_t attr_len_need = sizeof(radius_attr_hdr_t) + sizeof(value);
-    if (attr_len_need > remain)
-        return radius_err_mem;
+    radius_error_t rc = check_attr_len_needed(b, sizeof(value));
+    if (rc != radius_err_ok) {
+        return rc;
+    }
 
     radius_attr_hdr_t *ah = (radius_attr_hdr_t *) b->pos;
     ah->type = radius_attr_id;
-    ah->len = attr_len_need;
+    ah->len = sizeof(radius_attr_hdr_t) + sizeof(value);
     b->pos += sizeof(radius_attr_hdr_t);
     uint32_t *v = (uint32_t *)b->pos;
     *v = htobe32(value);
@@ -304,22 +319,30 @@ make_access_request_pkg(radius_pkg_builder_t *b,
     b->pkg->hdr.ident = ident;
 
     radius_error_t rc;
+    // User-Name
+    // https://www.rfc-editor.org/rfc/rfc2865#section-5.1
     rc = put_string_attr(b, RADIUS_ATTR_USER_NAME, user);
     if (rc != radius_err_ok) {
         return rc;
     }
 
+    // User-Password
+    // https://www.rfc-editor.org/rfc/rfc2865#section-5.2
     rc = put_passwd_crypt(b, secret, passwd);
     if (rc != radius_err_ok) {
         return rc;
     }
 
+    // Service-Type
+    // https://www.rfc-editor.org/rfc/rfc2865#section-5.6
     rc = put_integer_attr(b, RADIUS_ATTR_SERVICE_TYPE,
                           RADIUS_AUTHENTICATE_ONLY);
     if (rc != radius_err_ok) {
         return rc;
     }
 
+    // NAS-Identifier
+    // https://www.rfc-editor.org/rfc/rfc2865#section-5.32
     if (nas_id->len >= 3) {
         rc = put_string_attr(b, RADIUS_ATTR_NAS_IDENTIFIER, nas_id);
         if (rc != radius_err_ok) {
