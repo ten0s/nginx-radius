@@ -30,9 +30,7 @@ typedef struct radius_pkg_builder_t {
 
 typedef enum {
     radius_attr_type_str,
-    radius_attr_type_address,
-    radius_attr_type_integer,
-    radius_attr_type_time,
+    radius_attr_type_uint32,
 } radius_attr_type_t;
 
 typedef enum {
@@ -49,9 +47,10 @@ typedef struct radius_attr_desc_t {
 
 #define RADIUS_ATTR_USER_NAME           1
 #define RADIUS_ATTR_USER_PASSWORD       2
-#define RADIUS_ATTR_NAS_IP_ADDRESS      4
-#define RADIUS_ATTR_NAS_PORT            5
+#define RADIUS_ATTR_SERVICE_TYPE        6
 #define RADIUS_ATTR_NAS_IDENTIFIER      32
+
+#define RADIUS_AUTHENTICATE_ONLY        8
 
 #define RADIUS_ATTR_DESC_ITEM(t, lmin, lmax) \
     .type = t,                               \
@@ -65,11 +64,9 @@ static radius_attr_desc_t attrs_desc[] = {
     [RADIUS_ATTR_USER_PASSWORD] {
         RADIUS_ATTR_DESC_ITEM(radius_attr_type_str, 16, 128)
     },
-    [RADIUS_ATTR_NAS_IP_ADDRESS] {
-        RADIUS_ATTR_DESC_ITEM(radius_attr_type_address, 4, 4)
-    },
-    [RADIUS_ATTR_NAS_PORT] {
-        RADIUS_ATTR_DESC_ITEM(radius_attr_type_address, 4, 4)
+    [RADIUS_ATTR_SERVICE_TYPE] {
+        RADIUS_ATTR_DESC_ITEM(radius_attr_type_uint32,
+                              sizeof(uint32_t), sizeof(uint32_t))
     },
     [RADIUS_ATTR_NAS_IDENTIFIER] {
         RADIUS_ATTR_DESC_ITEM(radius_attr_type_str, 3, 64)
@@ -269,12 +266,11 @@ put_str_attr(radius_pkg_builder_t *b, int radius_attr_id, const ngx_str_t *str)
     return radius_err_ok;
 }
 
-#if 0
 static radius_error_t
-put_addr_attr(radius_pkg_builder_t* b, int radius_attr_id, uint32_t addr)
+put_uint32_attr(radius_pkg_builder_t* b, int radius_attr_id, uint32_t value)
 {
     size_t remain = sizeof(b->pkg->attrs) - (b->pos - b->pkg->attrs);
-    size_t attr_len_need = sizeof(radius_attr_hdr_t) + sizeof(addr);
+    size_t attr_len_need = sizeof(radius_attr_hdr_t) + sizeof(value);
     if (attr_len_need > remain)
         return radius_err_mem;
 
@@ -283,12 +279,11 @@ put_addr_attr(radius_pkg_builder_t* b, int radius_attr_id, uint32_t addr)
     ah->len = attr_len_need;
     b->pos += sizeof(radius_attr_hdr_t);
     uint32_t *v = (uint32_t *)b->pos;
-    *v = addr;
-    b->pos += sizeof(addr);
+    *v = htobe32(value); // big-endian
+    b->pos += sizeof(value);
 
     return radius_err_ok;
 }
-#endif
 
 static radius_error_t
 make_access_request_pkg(radius_pkg_builder_t *b,
@@ -309,6 +304,12 @@ make_access_request_pkg(radius_pkg_builder_t *b,
     }
 
     rc = put_passwd_crypt(b, secret, passwd);
+    if (rc != radius_err_ok) {
+        return rc;
+    }
+
+    rc = put_uint32_attr(b, RADIUS_ATTR_SERVICE_TYPE,
+                         RADIUS_AUTHENTICATE_ONLY);
     if (rc != radius_err_ok) {
         return rc;
     }
