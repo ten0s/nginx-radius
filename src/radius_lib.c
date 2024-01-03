@@ -33,7 +33,6 @@ typedef enum {
     radius_attr_type_address,
     radius_attr_type_integer,
     radius_attr_type_time,
-    radius_attr_type_chap_passwd,
 } radius_attr_type_t;
 
 typedef enum {
@@ -41,11 +40,6 @@ typedef enum {
     radius_err_range,
     radius_err_mem,
 } radius_error_t;
-
-typedef struct radius_attr_chap_passwd_t {
-    uint8_t chap_ident;
-    uint8_t chap_data[16];
-} radius_attr_chap_passwd_t;
 
 typedef struct radius_attr_desc_t {
     radius_attr_type_t type;
@@ -55,7 +49,6 @@ typedef struct radius_attr_desc_t {
 
 #define RADIUS_ATTR_USER_NAME           1
 #define RADIUS_ATTR_USER_PASSWORD       2
-#define RADIUS_ATTR_CHAP_PASSWORD       3
 #define RADIUS_ATTR_NAS_IP_ADDRESS      4
 #define RADIUS_ATTR_NAS_PORT            5
 #define RADIUS_ATTR_NAS_IDENTIFIER      32
@@ -71,11 +64,6 @@ static radius_attr_desc_t attrs_desc[] = {
     },
     [RADIUS_ATTR_USER_PASSWORD] {
         RADIUS_ATTR_DESC_ITEM(radius_attr_type_str, 16, 128)
-    },
-    [RADIUS_ATTR_CHAP_PASSWORD] {
-        RADIUS_ATTR_DESC_ITEM(radius_attr_type_chap_passwd,
-                              sizeof(radius_attr_chap_passwd_t),
-                              sizeof(radius_attr_chap_passwd_t))
     },
     [RADIUS_ATTR_NAS_IP_ADDRESS] {
         RADIUS_ATTR_DESC_ITEM(radius_attr_type_address, 4, 4)

@@ -834,7 +834,7 @@ recv_radius_pkg(radius_req_t *req,
         return -1;
     }
 
-    if (len > (int) sizeof(buf)) {
+    if (len > (ssize_t) sizeof(buf)) {
         LOG_ERR(log, 0, "recv buf too small, r: 0x%xl, req: 0x%xl",
                 req->http_req, req);
         return -1;
