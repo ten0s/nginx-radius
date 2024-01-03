@@ -13,13 +13,19 @@ $ make getsrc && make src
 $ make build_all
 ```
 
-3. Installation:
+3. Local run:
 
 ```
-$ make install
+$ make run
 ```
 
-4. Configuration:
+4. Local debug:
+
+```
+$ make gdb
+```
+
+5. Configuration:
 
 Sample config file: `conf/nginx.conf`:
 
@@ -36,4 +42,10 @@ radius_retries      3;
 
 # Location directive for enable module.
 auth_radius         "realm" | off;
+```
+
+6. Installation (optional):
+
+```
+$ make install
 ```

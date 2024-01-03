@@ -65,15 +65,15 @@ install:
 
 runenv:
 	mkdir -p $(RUN_PATH)/logs
-	[ -d $(RUN_PATH)/conf ] || cp -r conf $(RUN_PATH)
 
 run: runenv
 	cd $(RUN_PATH) && \
-		../$(NGX_SRC_PATH)/objs/nginx -p .
+		../$(NGX_SRC_PATH)/objs/nginx -p . -c ../conf/nginx.conf
 
 gdb: runenv
 	cd $(RUN_PATH) && \
-		gdb $(GDB_FLAGS) $(GDB_BREAK) $(GDB_RUN) --args ../$(NGX_SRC_PATH)/objs/nginx -p .
+		gdb $(GDB_FLAGS) $(GDB_BREAK) $(GDB_RUN) --args \
+		../$(NGX_SRC_PATH)/objs/nginx -p . -c ../conf/nginx.conf
 
 clean:
 	rm -rf $(NGX_SRC_PATH) $(RUN_PATH) tags
