@@ -11,7 +11,7 @@
 
 struct radius_server_s;
 typedef struct radius_req_s {
-    uint8_t ident;
+    uint8_t id;
     uint8_t auth[16];
     uint8_t active:1;
     uint8_t accepted:1;
@@ -653,7 +653,7 @@ add_radius_server(radius_server_t *rs,
     radius_req_t *req;
     for (i = 1; i < ARR_LEN(rs->req_queue); ++i) {
         req = &rs->req_queue[i];
-        req->ident = i;
+        req->id = i;
         rs->req_queue[i - 1].next = req;
     }
     rs->req_free_list = &rs->req_queue[0];
@@ -699,7 +699,8 @@ select_radius_server(ngx_http_request_t *r,
 
     req->http_req = r;
 
-    LOG_DEBUG(log, "r: 0x%xl, rs: 0x%xl, req: 0x%xl, req_id: %d", r, rs, req, req->ident);
+    LOG_DEBUG(log, "r: 0x%xl, rs: 0x%xl, req: 0x%xl, req_id: %d",
+              r, rs, req, req->id);
     int rc = send_radius_request(r, mcf, ctx, req);
     if (rc == NGX_ERROR) {
         LOG_INFO(log, "internal error r: 0x%xl", r);
@@ -732,7 +733,7 @@ send_radius_request(ngx_http_request_t *r,
 
     LOG_DEBUG(log,
             "r: 0x%xl, req: 0x%xl, req_id: %d",
-            r, req, req->ident);
+            r, req, req->id);
 
     return NGX_AGAIN;
 }
@@ -795,7 +796,7 @@ send_radius_pkg(radius_req_t *req,
 {
     uint8_t buf[RADIUS_PKG_MAX];
     size_t len = create_radius_pkg(buf, sizeof(buf),
-                                   req->ident,
+                                   req->id,
                                    user, passwd,
                                    &req->rs->secret,
                                    &req->rs->nas_id,
@@ -841,7 +842,7 @@ recv_radius_pkg(radius_req_t *req,
     }
 
     int rc = parse_radius_pkg(buf, len,
-                              req->ident,
+                              req->id,
                               &req->rs->secret,
                               req->auth);
     if (rc < 0) {
@@ -945,7 +946,7 @@ radius_read_handler(ngx_event_t *ev)
 
     LOG_DEBUG(log,
               "accepted: %d, r: 0x%xl, req: 0x%xl, req_id: %d",
-              req->accepted, r, req, req->ident);
+              req->accepted, r, req, req->id);
 
     ctx->done = 1;
     ctx->accepted = req->accepted;

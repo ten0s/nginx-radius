@@ -2,28 +2,28 @@
 #include <ngx_md5.h>
 #include "radius_lib.h"
 
-typedef struct radius_auth_t {
+typedef struct {
     uint8_t         d[16];
 } radius_auth_t;
 
-typedef struct radius_hdr_t {
+typedef struct {
     uint8_t         code;
-    uint8_t         ident;
+    uint8_t         id;
     uint16_t        len;
     radius_auth_t   auth;
 } radius_hdr_t;
 
-typedef struct radius_attr_hdr_t {
+typedef struct {
     uint8_t         type;
     uint8_t         len;
 } radius_attr_hdr_t;
 
-typedef struct radius_pkg_t {
+typedef struct {
     radius_hdr_t    hdr;
     uint8_t         attrs[RADIUS_PKG_MAX - sizeof(radius_hdr_t)];
 } radius_pkg_t;
 
-typedef struct radius_pkg_builder_t {
+typedef struct {
     radius_pkg_t   *pkg;
     uint8_t        *pos;
 } radius_pkg_builder_t;
@@ -41,7 +41,7 @@ typedef enum {
     radius_err_mem,
 } radius_error_t;
 
-typedef struct radius_attr_desc_t {
+typedef struct {
     radius_attr_type_t type;
     uint8_t            len_min;
     uint8_t            len_max;
@@ -100,7 +100,7 @@ check_string_attr_len_range(radius_pkg_builder_t *b,
 
 static radius_error_t
 make_access_request_pkg(radius_pkg_builder_t *b,
-                        uint8_t ident,
+                        uint8_t req_id,
                         const ngx_str_t *secret,
                         const ngx_str_t *user,
                         const ngx_str_t *passwd,
@@ -111,12 +111,12 @@ update_pkg_len(radius_pkg_builder_t *b);
 
 size_t
 create_radius_pkg(void *buf, size_t len,
-                  uint8_t ident,
+                  uint8_t req_id,
                   const ngx_str_t *user,
                   const ngx_str_t *passwd,
                   const ngx_str_t *secret,
                   const ngx_str_t *nas_id,
-                  uint8_t *auth)
+                  uint8_t /*out*/ *auth)
 {
     radius_pkg_builder_t b;
 
@@ -125,7 +125,7 @@ create_radius_pkg(void *buf, size_t len,
     if (auth) {
         ngx_memcpy(auth, &b.pkg->hdr.auth, sizeof(b.pkg->hdr.auth));
     }
-    make_access_request_pkg(&b, ident, secret, user, passwd, nas_id);
+    make_access_request_pkg(&b, req_id, secret, user, passwd, nas_id);
 
     update_pkg_len(&b);
 
@@ -134,7 +134,7 @@ create_radius_pkg(void *buf, size_t len,
 
 int
 parse_radius_pkg(const void *buf, size_t len,
-                 uint8_t ident,
+                 uint8_t req_id,
                  const ngx_str_t *secret,
                  const uint8_t *auth)
 {
@@ -145,7 +145,7 @@ parse_radius_pkg(const void *buf, size_t len,
     }
 
     // Check correlation id matches
-    if (ident != pkg->hdr.ident) {
+    if (req_id != pkg->hdr.id) {
         return -2;
     }
 
@@ -318,7 +318,7 @@ put_integer_attr(radius_pkg_builder_t* b,
 
 static radius_error_t
 make_access_request_pkg(radius_pkg_builder_t *b,
-                        uint8_t ident,
+                        uint8_t req_id,
                         const ngx_str_t *secret,
                         const ngx_str_t *user,
                         const ngx_str_t *passwd,
@@ -326,7 +326,7 @@ make_access_request_pkg(radius_pkg_builder_t *b,
 {
     assert(b && user && passwd);
     b->pkg->hdr.code = RADIUS_CODE_ACCESS_REQUEST;
-    b->pkg->hdr.ident = ident;
+    b->pkg->hdr.id = req_id;
 
     radius_error_t rc;
     // User-Name
