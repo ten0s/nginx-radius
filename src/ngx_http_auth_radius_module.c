@@ -532,6 +532,23 @@ init_radius_servers(ngx_array_t *servers, ngx_log_t *log)
     radius_server_t *rss = servers->elts;
     for (i = 0; i < servers->nelts; ++i) {
         radius_server_t *rs = &rss[i];
+
+        sa_family_t family = rs->sockaddr->sa_family;
+        char host[INET_ADDRSTRLEN] = "";
+        uint16_t port = 0;
+        if (family == AF_INET) {
+            struct sockaddr_in *sa = (struct sockaddr_in *)rs->sockaddr;
+            inet_ntop(family, &sa->sin_addr, host, sizeof(host)),
+            port = ntohs(sa->sin_port);
+        } else if (rs->sockaddr->sa_family == AF_INET6) {
+            struct sockaddr_in6 *sa = (struct sockaddr_in6 *)rs->sockaddr;
+            inet_ntop(family, &sa->sin6_addr, host, sizeof(host)),
+            port = ntohs(sa->sin6_port);
+        } else {
+            LOG_ERR(log, 0, "unknown family: %d", family);
+        }
+        LOG_DEBUG(log, "server: %d, addr: %s:%d", i, host, port);
+
         for (j = 0; j < ARR_LEN(rs->req_queue); ++j) {
             radius_req_t *req = &rs->req_queue[j];
             ngx_connection_t *c = create_radius_connection(rs->sockaddr,
@@ -581,7 +598,7 @@ create_radius_connection(struct sockaddr *sockaddr,
                          ngx_log_t *log)
 {
     // Create UDP socket
-    int sockfd = ngx_socket(AF_INET, SOCK_DGRAM, 0);
+    int sockfd = ngx_socket(sockaddr->sa_family, SOCK_DGRAM, 0);
     if (sockfd == -1) {
         LOG_ERR(log, ngx_errno, "ngx_socket failed");
         return NULL;
@@ -624,6 +641,32 @@ create_radius_connection(struct sockaddr *sockaddr,
         ngx_close_connection(c);
         return NULL;
     }
+
+    sa_family_t family = sockaddr->sa_family;
+    char host[INET_ADDRSTRLEN] = "";
+    uint16_t port = 0;
+    if (family == AF_INET) {
+        struct sockaddr_in sa;
+        ngx_memset(&sa, 0, sizeof(sa));
+        if (getsockname(sockfd, (struct sockaddr *)&sa, &socklen) != -1) {
+            inet_ntop(family, &sa.sin_addr, host, sizeof(host)),
+            port = ntohs(sa.sin_port);
+        } else {
+            LOG_ERR(log, ngx_errno, "getsockname sockaddr_in failed");
+        }
+    } else if (family == AF_INET6) {
+        struct sockaddr_in6 sa;
+        ngx_memset(&sa, 0, sizeof(sa));
+        if (getsockname(sockfd, (struct sockaddr *)&sa, &socklen) != -1) {
+            inet_ntop(family, &sa.sin6_addr, host, sizeof(host)),
+            port = ntohs(sa.sin6_port);
+        } else {
+            LOG_ERR(log, ngx_errno, "getsockname sockaddr_in6 failed");
+        }
+    } else {
+        LOG_ERR(log, 0, "unknown family: %d", family);
+    }
+    LOG_DEBUG(log, "sockfd: %d, addr: %s:%d", sockfd, host, port);
 
     return c;
 }
