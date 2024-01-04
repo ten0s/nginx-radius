@@ -540,7 +540,7 @@ init_radius_servers(ngx_array_t *servers, ngx_log_t *log)
             struct sockaddr_in *sa = (struct sockaddr_in *)rs->sockaddr;
             inet_ntop(family, &sa->sin_addr, host, sizeof(host)),
             port = ntohs(sa->sin_port);
-        } else if (rs->sockaddr->sa_family == AF_INET6) {
+        } else if (family == AF_INET6) {
             struct sockaddr_in6 *sa = (struct sockaddr_in6 *)rs->sockaddr;
             inet_ntop(family, &sa->sin6_addr, host, sizeof(host)),
             port = ntohs(sa->sin6_port);
