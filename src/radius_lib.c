@@ -87,7 +87,7 @@ static void
 init_radius_pkg(radius_pkg_builder_t *b, void *buf, int len);
 
 static void
-gen_authenticator(radius_auth_t *auth);
+gen_auth(radius_auth_t *auth);
 
 static radius_error_t
 check_attr_len_needed(radius_pkg_builder_t *b,
@@ -121,7 +121,7 @@ create_radius_pkg(void *buf, size_t len,
     radius_pkg_builder_t b;
 
     init_radius_pkg(&b, buf, len);
-    gen_authenticator(&b.pkg->hdr.auth);
+    gen_auth(&b.pkg->hdr.auth);
     if (req_auth) {
         ngx_memcpy(req_auth, &b.pkg->hdr.auth, sizeof(b.pkg->hdr.auth));
     }
@@ -185,7 +185,7 @@ init_radius_pkg(radius_pkg_builder_t *b, void *buf, int len)
 }
 
 static void
-gen_authenticator(radius_auth_t *auth)
+gen_auth(radius_auth_t *auth)
 {
     uint8_t i;
     for(i = 0; i < sizeof(radius_auth_t); i++) {
