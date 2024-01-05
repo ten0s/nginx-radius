@@ -534,7 +534,7 @@ init_radius_servers(ngx_array_t *servers, ngx_log_t *log)
         radius_server_t *rs = &rss[i];
 
         sa_family_t family = rs->sockaddr->sa_family;
-        char host[INET_ADDRSTRLEN] = "";
+        char host[INET6_ADDRSTRLEN] = "";
         uint16_t port = 0;
         if (family == AF_INET) {
             struct sockaddr_in *sa = (struct sockaddr_in *)rs->sockaddr;
@@ -643,7 +643,7 @@ create_radius_connection(struct sockaddr *sockaddr,
     }
 
     sa_family_t family = sockaddr->sa_family;
-    char host[INET_ADDRSTRLEN] = "";
+    char host[INET6_ADDRSTRLEN] = "";
     uint16_t port = 0;
     if (family == AF_INET) {
         struct sockaddr_in sa;
@@ -886,8 +886,8 @@ recv_radius_pkg(radius_req_t *req,
 
     int rc = parse_radius_pkg(buf, len,
                               req->id,
-                              &req->rs->secret,
-                              req->auth);
+                              req->auth,
+                              &req->rs->secret);
     if (rc < 0) {
         switch (rc) {
         case -1:

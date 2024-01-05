@@ -10,7 +10,7 @@ create_radius_pkg(void *buf, size_t len,
                   const ngx_str_t *passwd,
                   const ngx_str_t *secret,
                   const ngx_str_t *nas_id,
-                  uint8_t /*out*/ *auth);
+                  uint8_t /*out*/ *req_auth);
 
 #define RADIUS_AUTH_ACCEPTED 0
 #define RADIUS_AUTH_REJECTED 1
@@ -18,7 +18,7 @@ create_radius_pkg(void *buf, size_t len,
 int
 parse_radius_pkg(const void *buf, size_t len,
                  uint8_t req_id,
-                 const ngx_str_t *secret,
-                 const uint8_t *auth);
+                 const uint8_t *req_auth,
+                 const ngx_str_t *secret);
 
 #endif // __RADIUS_LIB_H__

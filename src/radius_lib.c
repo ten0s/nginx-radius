@@ -116,14 +116,14 @@ create_radius_pkg(void *buf, size_t len,
                   const ngx_str_t *passwd,
                   const ngx_str_t *secret,
                   const ngx_str_t *nas_id,
-                  uint8_t /*out*/ *auth)
+                  uint8_t /*out*/ *req_auth)
 {
     radius_pkg_builder_t b;
 
     init_radius_pkg(&b, buf, len);
     gen_authenticator(&b.pkg->hdr.auth);
-    if (auth) {
-        ngx_memcpy(auth, &b.pkg->hdr.auth, sizeof(b.pkg->hdr.auth));
+    if (req_auth) {
+        ngx_memcpy(req_auth, &b.pkg->hdr.auth, sizeof(b.pkg->hdr.auth));
     }
     make_access_request_pkg(&b, req_id, secret, user, passwd, nas_id);
 
@@ -135,8 +135,8 @@ create_radius_pkg(void *buf, size_t len,
 int
 parse_radius_pkg(const void *buf, size_t len,
                  uint8_t req_id,
-                 const ngx_str_t *secret,
-                 const uint8_t *auth)
+                 const uint8_t *req_auth,
+                 const ngx_str_t *secret)
 {
     radius_pkg_t *pkg = (radius_pkg_t *) buf;
     uint16_t pkg_len = ntohs(pkg->hdr.len);
@@ -149,19 +149,23 @@ parse_radius_pkg(const void *buf, size_t len,
         return -2;
     }
 
+    // Save actual response authenticator
+    uint8_t act_auth[sizeof(pkg->hdr.auth)];
+    ngx_memcpy(act_auth, &pkg->hdr.auth, sizeof(act_auth));
+
+    // Calculate expected authenticator
+    ngx_memcpy(&pkg->hdr.auth, req_auth, sizeof(pkg->hdr.auth));
+
     ngx_md5_t ctx;
     ngx_md5_init(&ctx);
-
-    char save_auth[sizeof(pkg->hdr.auth)];
-    uint8_t check[sizeof(pkg->hdr.auth)];
-
-    ngx_memcpy(save_auth, &pkg->hdr.auth, sizeof(save_auth));
-    ngx_memcpy(&pkg->hdr.auth, auth, sizeof(pkg->hdr.auth));
     ngx_md5_update(&ctx, pkg, len);
     ngx_md5_update(&ctx, secret->data, secret->len);
-    ngx_md5_final(check, &ctx);
 
-    if (ngx_memcmp(save_auth, check, sizeof(save_auth)) != 0) {
+    uint8_t exp_auth[sizeof(pkg->hdr.auth)];
+    ngx_md5_final(exp_auth, &ctx);
+
+    // Check actual and expected authenticators match
+    if (ngx_memcmp(act_auth, exp_auth, sizeof(act_auth)) != 0) {
         return -3;
     }
 
