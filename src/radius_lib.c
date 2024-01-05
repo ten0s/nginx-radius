@@ -3,7 +3,7 @@
 #include "radius_lib.h"
 
 typedef struct {
-    uint8_t         d[16];
+    uint8_t         d[AUTH_BUF_SIZE];
 } radius_auth_t;
 
 typedef struct {

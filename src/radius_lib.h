@@ -1,7 +1,11 @@
 #ifndef __RADIUS_LIB_H__
 #define __RADIUS_LIB_H__
 
-#define RADIUS_PKG_MAX 256
+// https://www.rfc-editor.org/rfc/rfc2865#section-3
+// The minimum length is 20 and maximum length is 4096.
+#define RADIUS_PKG_MAX 4096
+
+#define AUTH_BUF_SIZE 16 // MD5_DIGEST_LENGTH
 
 size_t
 create_radius_pkg(void *buf, size_t len,

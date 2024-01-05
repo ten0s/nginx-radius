@@ -12,7 +12,8 @@
 struct radius_server_s;
 typedef struct radius_req_s {
     uint8_t id;
-    uint8_t auth[16];
+    uint8_t buf[RADIUS_PKG_MAX];
+    uint8_t auth[AUTH_BUF_SIZE];
     uint8_t active:1;
     uint8_t accepted:1;
     struct radius_server_s *rs;
@@ -837,15 +838,14 @@ send_radius_pkg(radius_req_t *req,
                 ngx_msec_t timeout,
                 ngx_log_t *log)
 {
-    uint8_t buf[RADIUS_PKG_MAX];
-    size_t len = create_radius_pkg(buf, sizeof(buf),
+    size_t len = create_radius_pkg(req->buf, sizeof(req->buf),
                                    req->id,
                                    user, passwd,
                                    &req->rs->secret,
                                    &req->rs->nas_id,
                                    req->auth);
 
-    int rc = send(req->conn->fd, buf, len, 0);
+    int rc = send(req->conn->fd, req->buf, len, 0);
     if (rc == -1) {
         LOG_ERR(log, ngx_errno,
                 "send failed, fd: %d, r: 0x%xl, len: %u",
@@ -870,21 +870,22 @@ recv_radius_pkg(radius_req_t *req,
         ngx_del_timer(req->conn->read);
     }
 
-    uint8_t buf[RADIUS_PKG_MAX];
-    ssize_t len = recv(req->conn->fd, buf, sizeof(buf), MSG_TRUNC);
+    ssize_t len = recv(req->conn->fd,
+                       req->buf, sizeof(req->buf),
+                       MSG_TRUNC);
     if (len == -1) {
         LOG_ERR(log, ngx_errno, "recv failed, r: 0x%xl, req: 0x%xl",
                 req->http_req, req);
         return -1;
     }
 
-    if (len > (ssize_t) sizeof(buf)) {
+    if (len > (ssize_t) sizeof(req->buf)) {
         LOG_ERR(log, 0, "recv buf too small, r: 0x%xl, req: 0x%xl",
                 req->http_req, req);
         return -1;
     }
 
-    int rc = parse_radius_pkg(buf, len,
+    int rc = parse_radius_pkg(req->buf, len,
                               req->id,
                               req->auth,
                               &req->rs->secret);
