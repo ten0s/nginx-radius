@@ -762,8 +762,6 @@ send_radius_request(ngx_http_request_t *r,
 {
     ngx_log_t *log = r->connection->log;
 
-    LOG_DEBUG(log, "r: 0x%xl", r);
-
     // Send RADIUS Auth request
     int rc = send_radius_pkg(req,
                              &r->headers_in.user,
@@ -771,13 +769,14 @@ send_radius_request(ngx_http_request_t *r,
                              mcf->timeout,
                              log);
     if (rc == -1) {
-        LOG_ERR(log, 0, "req failed req: 0x%xl, r: 0x%xl", req, r);
+        LOG_ERR(log, 0, "req failed r: 0x%xl, req: 0x%xl, req_id: %d",
+                r, req, req->id);
         return NGX_ERROR;
     }
 
     LOG_DEBUG(log,
-            "r: 0x%xl, req: 0x%xl, req_id: %d",
-            r, req, req->id);
+              "r: 0x%xl, req: 0x%xl, req_id: %d",
+              r, req, req->id);
 
     return NGX_AGAIN;
 }
@@ -864,61 +863,61 @@ recv_radius_pkg(radius_req_t *req,
                 radius_server_t *rs,
                 ngx_log_t *log)
 {
-    // Remove read timeout event
-    if (req->conn->read->timer_set) {
-        req->conn->read->timer_set = 0;
-        ngx_del_timer(req->conn->read);
-    }
-
-    ssize_t len = recv(req->conn->fd,
-                       req->buf, sizeof(req->buf),
-                       MSG_TRUNC);
-    if (len == -1) {
-        LOG_ERR(log, ngx_errno, "recv failed, r: 0x%xl, req: 0x%xl",
-                req->http_req, req);
-        return -1;
-    }
-
-    if (len > (ssize_t) sizeof(req->buf)) {
-        LOG_ERR(log, 0, "recv buf too small, r: 0x%xl, req: 0x%xl",
-                req->http_req, req);
-        return -1;
-    }
-
-    int rc = parse_radius_pkg(req->buf, len,
-                              req->id,
-                              req->auth,
-                              &req->rs->secret);
-    if (rc < 0) {
-        switch (rc) {
-        case -1:
-            LOG_ERR(log, 0,
-                    "parse pkg error: incorrect pkg len: %d, r: 0x%xl, req: 0x%xl",
-                    len, req->http_req, req);
-            break;
-        case -2:
-            LOG_ERR(log, 0,
-                    "parse pkg error: req id doesn't match, r: 0x%xl, req: 0x%xl",
-                    req->http_req, req);
-            break;
-        case -3:
-            LOG_ERR(log, 0,
-                    "parse pkg error: incorrect auth, r: 0x%xl, req: 0x%xl",
-                    req->http_req, req);
-            break;
-        default:
-            LOG_ERR(log, 0,
-                    "parse pkg error: unknown rc: %d, r: 0x%xl, req: 0x%xl",
-                    rc, req->http_req, req);
-            break;
+    // Read as much as possible
+    int prev_rc = -1;
+    for (;;) {
+        ssize_t len = recv(req->conn->fd,
+                           req->buf, sizeof(req->buf),
+                           MSG_TRUNC);
+        if (len == -1) {
+            if (ngx_errno != EAGAIN) {
+                LOG_ERR(log, ngx_errno, "recv failed, r: 0x%xl, req: 0x%xl",
+                        req->http_req, req);
+            }
+            // Nothing can be received any more, exit
+            return prev_rc;
         }
 
-        return -1;
+        if (len > (ssize_t) sizeof(req->buf)) {
+            LOG_ERR(log, 0, "recv buf too small, r: 0x%xl, req: 0x%xl",
+                    req->http_req, req);
+            continue;
+        }
+
+        int rc = parse_radius_pkg(req->buf, len,
+                                  req->id,
+                                  req->auth,
+                                  &req->rs->secret);
+        if (rc < 0) {
+            switch (rc) {
+            case -1:
+                LOG_ERR(log, 0,
+                        "parse pkg error: incorrect pkg len: %d, r: 0x%xl, req: 0x%xl",
+                        len, req->http_req, req);
+                break;
+            case -2:
+                LOG_ERR(log, 0,
+                        "parse pkg error: req_id doesn't match, r: 0x%xl, req: 0x%xl",
+                        req->http_req, req);
+                break;
+            case -3:
+                LOG_ERR(log, 0,
+                        "parse pkg error: incorrect auth, r: 0x%xl, req: 0x%xl",
+                        req->http_req, req);
+                break;
+            default:
+                LOG_ERR(log, 0,
+                        "parse pkg error: unknown rc: %d, r: 0x%xl, req: 0x%xl",
+                        rc, req->http_req, req);
+                break;
+            }
+
+            continue;
+        }
+
+        req->accepted = rc == RADIUS_AUTH_ACCEPTED;
+        return rc;
     }
-
-    req->accepted = rc == RADIUS_AUTH_ACCEPTED;
-
-    return 0;
 }
 
 static void
@@ -936,6 +935,25 @@ radius_read_handler(ngx_event_t *ev)
     ngx_connection_t *c = ev->data;
     radius_req_t *req = c->data;
     ngx_http_request_t *r = req->http_req;
+
+    if (r == NULL) {
+        LOG_ERR(log, 0, "r == NULL, unexpected data received, flush it");
+        uint8_t buf[RADIUS_PKG_MAX];
+        for (;;) {
+            ssize_t len = recv(req->conn->fd,
+                               buf, sizeof(buf),
+                               MSG_TRUNC);
+            if (len == -1) {
+                if (ngx_errno != EAGAIN) {
+                    LOG_ERR(log, ngx_errno,
+                            "recv failed, r: 0x%xl, req: 0x%xl",
+                            req->http_req, req);
+                }
+                break;
+            }
+        }
+        return;
+    }
 
     ngx_http_auth_radius_main_conf_t *mcf;
     mcf = ngx_http_get_module_main_conf(r, ngx_http_auth_radius_module);
@@ -982,9 +1000,14 @@ radius_read_handler(ngx_event_t *ev)
             goto auth_done;
         } else {
             LOG_ERR(log, 0, "recv radius pkg: bad pkg r: 0x%xl", r);
-            ctx->done = 1;
-            ctx->internal_error = 1;
-            goto auth_done;
+            // Handle error in read timeout
+            return;
+        }
+    } else {
+        // Remove read timeout event
+        if (req->conn->read->timer_set) {
+            req->conn->read->timer_set = 0;
+            ngx_del_timer(req->conn->read);
         }
     }
 
