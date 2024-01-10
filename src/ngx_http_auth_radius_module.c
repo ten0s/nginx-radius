@@ -73,14 +73,10 @@ ngx_http_auth_radius_merge_loc_conf(ngx_conf_t *cf,
                                     void *child);
 
 static char *
-ngx_http_auth_radius_set_auth_radius(ngx_conf_t *cf,
-                                     ngx_command_t *cmd,
-                                     void *conf);
-
-static char *
 ngx_http_auth_radius_set_radius_server(ngx_conf_t *cf,
                                        ngx_command_t *cmd,
                                        void *conf);
+
 static char *
 ngx_http_auth_radius_set_radius_timeout(ngx_conf_t *cf,
                                         ngx_command_t *cmd,
@@ -90,6 +86,11 @@ static char *
 ngx_http_auth_radius_set_radius_retries(ngx_conf_t *cf,
                                          ngx_command_t *cmd,
                                          void *conf);
+
+static char *
+ngx_http_auth_radius_set_auth_radius(ngx_conf_t *cf,
+                                     ngx_command_t *cmd,
+                                     void *conf);
 
 static ngx_int_t
 ngx_http_auth_radius_init_servers(ngx_cycle_t *cycle);
