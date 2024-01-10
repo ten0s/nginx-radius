@@ -814,7 +814,7 @@ select_radius_server(ngx_http_request_t *r,
         return NGX_AGAIN;
     }
 
-    ctx->retries = mcf->retries;
+    ctx->retries = lcf->type == HEALTH ? 1 : mcf->retries;
     ctx->req = req;
     ctx->done = 0;
     ctx->accepted = 0;
