@@ -34,11 +34,17 @@ Sample config file: `conf/nginx.conf`:
 # Can be several servers.
 radius_server       127.0.0.1:1812 "secret" ["nas-identifier"];
 
-# Timeout for radius requests.
-radius_timeout      5s;
+# Timeout for radius auth requests.
+radius_auth_timeout      5s;
 
-# Retries count for radius requests.
-radius_retries      3;
+# Retries count for radius auth requests.
+radius_auth_retries      3;
+
+# Timeout for radius health requests.
+radius_auth_timeout      5s;
+
+# Retries count for radius health requests.
+radius_auth_retries      1;
 
 # Location directive to enable module and make auth request.
 auth_radius         "realm" | off;

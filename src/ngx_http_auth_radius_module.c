@@ -38,8 +38,10 @@ typedef struct radius_server_s {
 
 typedef struct {
     ngx_array_t *servers;
-    ngx_msec_t timeout;
-    ngx_uint_t retries;
+    ngx_msec_t auth_timeout;
+    ngx_uint_t auth_retries;
+    ngx_msec_t health_timeout;
+    ngx_uint_t health_retries;
     ngx_str_t secret;
 } ngx_http_auth_radius_main_conf_t;
 
@@ -93,14 +95,24 @@ ngx_http_auth_radius_set_radius_server(ngx_conf_t *cf,
                                        void *conf);
 
 static char *
-ngx_http_auth_radius_set_radius_timeout(ngx_conf_t *cf,
-                                        ngx_command_t *cmd,
-                                        void *conf);
+ngx_http_auth_radius_set_radius_auth_timeout(ngx_conf_t *cf,
+                                             ngx_command_t *cmd,
+                                             void *conf);
 
 static char *
-ngx_http_auth_radius_set_radius_retries(ngx_conf_t *cf,
-                                         ngx_command_t *cmd,
-                                         void *conf);
+ngx_http_auth_radius_set_radius_auth_retries(ngx_conf_t *cf,
+                                             ngx_command_t *cmd,
+                                             void *conf);
+
+static char *
+ngx_http_auth_radius_set_radius_health_timeout(ngx_conf_t *cf,
+                                               ngx_command_t *cmd,
+                                               void *conf);
+
+static char *
+ngx_http_auth_radius_set_radius_health_retries(ngx_conf_t *cf,
+                                               ngx_command_t *cmd,
+                                               void *conf);
 
 static char *
 ngx_http_auth_radius_set_auth_radius(ngx_conf_t *cf,
@@ -127,16 +139,30 @@ static ngx_command_t ngx_http_auth_radius_commands[] = {
       0,
       NULL },
 
-    { ngx_string("radius_timeout"),
+    { ngx_string("radius_auth_timeout"),
       NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_CONF_TAKE1,
-      ngx_http_auth_radius_set_radius_timeout,
+      ngx_http_auth_radius_set_radius_auth_timeout,
       0,
       0,
       NULL },
 
-    { ngx_string("radius_retries"),
+    { ngx_string("radius_auth_retries"),
       NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_CONF_TAKE1,
-      ngx_http_auth_radius_set_radius_retries,
+      ngx_http_auth_radius_set_radius_auth_retries,
+      0,
+      0,
+      NULL },
+
+    { ngx_string("radius_health_timeout"),
+      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_CONF_TAKE1,
+      ngx_http_auth_radius_set_radius_health_timeout,
+      0,
+      0,
+      NULL },
+
+    { ngx_string("radius_health_retries"),
+      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_CONF_TAKE1,
+      ngx_http_auth_radius_set_radius_health_retries,
       0,
       0,
       NULL },
@@ -363,8 +389,10 @@ ngx_http_auth_radius_create_main_conf(ngx_conf_t *cf)
         return NGX_CONF_ERROR;
     }
 
-    mcf->timeout = 5000;
-    mcf->retries = 3;
+    mcf->auth_timeout = 5000;
+    mcf->auth_retries = 3;
+    mcf->health_timeout = 5000;
+    mcf->health_retries = 1;
 
     return mcf;
 }
@@ -451,9 +479,9 @@ ngx_http_auth_radius_set_radius_server(ngx_conf_t *cf,
 }
 
 static char*
-ngx_http_auth_radius_set_radius_timeout(ngx_conf_t *cf,
-                                        ngx_command_t *cmd,
-                                        void *conf)
+ngx_http_auth_radius_set_radius_auth_timeout(ngx_conf_t *cf,
+                                             ngx_command_t *cmd,
+                                             void *conf)
 {
     ngx_str_t* value = cf->args->elts;
 
@@ -463,20 +491,43 @@ ngx_http_auth_radius_set_radius_timeout(ngx_conf_t *cf,
     ngx_int_t timeout = ngx_parse_time(&value[1], 0);
     if (timeout == NGX_ERROR) {
         CONF_LOG_EMERG(cf, ngx_errno,
-                       "invalid \"radius_timeout\" value: \"%V\"",
+                       "invalid \"radius_auth_timeout\" value: \"%V\"",
                        &value[1]);
         return NGX_CONF_ERROR;
     }
 
-    mcf->timeout = timeout;
+    mcf->auth_timeout = timeout;
 
     return NGX_CONF_OK;
 }
 
 static char*
-ngx_http_auth_radius_set_radius_retries(ngx_conf_t *cf,
-                                         ngx_command_t *cmd,
-                                         void *conf)
+ngx_http_auth_radius_set_radius_health_timeout(ngx_conf_t *cf,
+                                               ngx_command_t *cmd,
+                                               void *conf)
+{
+    ngx_str_t* value = cf->args->elts;
+
+    ngx_http_auth_radius_main_conf_t* mcf;
+    mcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_auth_radius_module);
+
+    ngx_int_t timeout = ngx_parse_time(&value[1], 0);
+    if (timeout == NGX_ERROR) {
+        CONF_LOG_EMERG(cf, ngx_errno,
+                       "invalid \"radius_health_timeout\" value: \"%V\"",
+                       &value[1]);
+        return NGX_CONF_ERROR;
+    }
+
+    mcf->health_timeout = timeout;
+
+    return NGX_CONF_OK;
+}
+
+static char*
+ngx_http_auth_radius_set_radius_auth_retries(ngx_conf_t *cf,
+                                             ngx_command_t *cmd,
+                                             void *conf)
 {
     ngx_str_t* value = cf->args->elts;
 
@@ -486,12 +537,35 @@ ngx_http_auth_radius_set_radius_retries(ngx_conf_t *cf,
     ngx_int_t retries = ngx_atoi(value[1].data, value[1].len);
     if (retries == NGX_ERROR) {
         CONF_LOG_EMERG(cf, ngx_errno,
-                       "invalid \"radius_retries\" value: \"%V\"",
+                       "invalid \"radius_auth_retries\" value: \"%V\"",
                        &value[1]);
         return NGX_CONF_ERROR;
     }
 
-    mcf->retries = retries;
+    mcf->auth_retries = retries;
+
+    return NGX_CONF_OK;
+}
+
+static char*
+ngx_http_auth_radius_set_radius_health_retries(ngx_conf_t *cf,
+                                               ngx_command_t *cmd,
+                                               void *conf)
+{
+    ngx_str_t* value = cf->args->elts;
+
+    ngx_http_auth_radius_main_conf_t* mcf;
+    mcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_auth_radius_module);
+
+    ngx_int_t retries = ngx_atoi(value[1].data, value[1].len);
+    if (retries == NGX_ERROR) {
+        CONF_LOG_EMERG(cf, ngx_errno,
+                       "invalid \"radius_health_retries\" value: \"%V\"",
+                       &value[1]);
+        return NGX_CONF_ERROR;
+    }
+
+    mcf->health_retries = retries;
 
     return NGX_CONF_OK;
 }
@@ -814,7 +888,7 @@ select_radius_server(ngx_http_request_t *r,
         return NGX_AGAIN;
     }
 
-    ctx->retries = lcf->type == HEALTH ? 1 : mcf->retries;
+    ctx->retries = lcf->type == AUTH ? mcf->auth_retries : mcf->health_retries;
     ctx->req = req;
     ctx->done = 0;
     ctx->accepted = 0;
@@ -846,23 +920,21 @@ send_radius_request(ngx_http_request_t *r,
 
     ngx_str_t *user;
     ngx_str_t *passwd;
+    ngx_msec_t timeout;
 
     if (lcf->type == AUTH) {
         user = &r->headers_in.user;
         passwd = &r->headers_in.passwd;
+        timeout = mcf->auth_timeout;
     } else if (lcf->type == HEALTH) {
         user = &lcf->health.user;
         passwd = &lcf->health.passwd;
+        timeout = mcf->health_timeout;
     } else {
         assert(0);
     }
 
-    // Send RADIUS Auth request
-    int rc = send_radius_pkg(req,
-                             user,
-                             passwd,
-                             mcf->timeout,
-                             log);
+    int rc = send_radius_pkg(req, user, passwd, timeout, log);
     if (rc == -1) {
         LOG_ERR(log, 0, "req failed r: 0x%xl, req: 0x%xl, req_id: %d",
                 r, req, req->id);
