@@ -293,11 +293,10 @@ ngx_http_auth_radius_handler(ngx_http_request_t *r)
 static ngx_int_t
 ngx_http_auth_radius_init(ngx_conf_t *cf)
 {
-    ngx_http_handler_pt       *h;
     ngx_http_core_main_conf_t *cmcf;
-
     cmcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_core_module);
 
+    ngx_http_handler_pt *h;
     h = ngx_array_push(&cmcf->phases[NGX_HTTP_ACCESS_PHASE].handlers);
     if (h == NULL) {
         CONF_LOG_EMERG(cf, ngx_errno, "ngx_array_push failed");
@@ -313,7 +312,6 @@ static void *
 ngx_http_auth_radius_create_main_conf(ngx_conf_t *cf)
 {
     ngx_http_auth_radius_main_conf_t *mcf;
-
     mcf = ngx_pcalloc(cf->pool, sizeof(ngx_http_auth_radius_main_conf_t));
     if (mcf == NULL) {
         CONF_LOG_EMERG(cf, ngx_errno, "ngx_pcalloc failed");
@@ -372,8 +370,8 @@ ngx_http_auth_radius_set_radius_server(ngx_conf_t *cf,
         return NGX_CONF_ERROR;
     }
 
-    ngx_http_auth_radius_main_conf_t *mcf =
-        ngx_http_conf_get_module_main_conf(cf, ngx_http_auth_radius_module);
+    ngx_http_auth_radius_main_conf_t *mcf;
+    mcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_auth_radius_module);
 
     ngx_url_t u;
     ngx_memzero(&u, sizeof(ngx_url_t));
@@ -420,8 +418,8 @@ ngx_http_auth_radius_set_radius_timeout(ngx_conf_t *cf,
 {
     ngx_str_t* value = cf->args->elts;
 
-    ngx_http_auth_radius_main_conf_t* mcf =
-        ngx_http_conf_get_module_main_conf(cf, ngx_http_auth_radius_module);
+    ngx_http_auth_radius_main_conf_t* mcf;
+    mcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_auth_radius_module);
 
     ngx_int_t timeout = ngx_parse_time(&value[1], 0);
     if (timeout == NGX_ERROR) {
@@ -443,8 +441,8 @@ ngx_http_auth_radius_set_radius_retries(ngx_conf_t *cf,
 {
     ngx_str_t* value = cf->args->elts;
 
-    ngx_http_auth_radius_main_conf_t* mcf =
-        ngx_http_conf_get_module_main_conf(cf, ngx_http_auth_radius_module);
+    ngx_http_auth_radius_main_conf_t* mcf;
+    mcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_auth_radius_module);
 
     ngx_int_t retries = ngx_atoi(value[1].data, value[1].len);
     if (retries == NGX_ERROR) {
@@ -470,8 +468,8 @@ ngx_http_auth_radius_set_auth_radius(ngx_conf_t *cf,
         return NGX_CONF_OK;
     }
 
-    ngx_http_auth_radius_loc_conf_t *lcf =
-        ngx_http_conf_get_module_loc_conf(cf, ngx_http_auth_radius_module);
+    ngx_http_auth_radius_loc_conf_t *lcf;
+    lcf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_auth_radius_module);
 
     lcf->realm.len = sizeof("Basic realm=\"") - 1 + value[1].len + 1;
     lcf->realm.data = ngx_pcalloc(cf->pool, lcf->realm.len);
