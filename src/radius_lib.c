@@ -342,9 +342,11 @@ make_access_request_pkg(radius_pkg_builder_t *b,
 
     // User-Password
     // https://www.rfc-editor.org/rfc/rfc2865#section-5.2
-    rc = put_passwd_crypt(b, secret, passwd);
-    if (rc != radius_err_ok) {
-        return rc;
+    if (passwd->len > 0) {
+        rc = put_passwd_crypt(b, secret, passwd);
+        if (rc != radius_err_ok) {
+            return rc;
+        }
     }
 
     // Service-Type
