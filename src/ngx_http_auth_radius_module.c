@@ -182,7 +182,7 @@ static ngx_command_t ngx_http_auth_radius_commands[] = {
       NULL },
 
     { ngx_string("radius_health"),
-      NGX_HTTP_LOC_CONF | NGX_CONF_TAKE12,
+      NGX_HTTP_LOC_CONF | NGX_CONF_NOARGS | NGX_CONF_TAKE12,
       ngx_http_auth_radius_set_radius_health,
       0,
       0,
@@ -622,13 +622,6 @@ ngx_http_auth_radius_set_radius_health(ngx_conf_t *cf,
 {
     ngx_str_t *value = cf->args->elts;
 
-    if (cf->args->nelts != 2 && cf->args->nelts != 3) {
-        CONF_LOG_EMERG(cf, 0,
-                       "invalid \"%V\" config",
-                       &value[0]);
-        return NGX_CONF_ERROR;
-    }
-
     ngx_http_auth_radius_loc_conf_t *lcf;
     lcf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_auth_radius_module);
 
@@ -639,7 +632,9 @@ ngx_http_auth_radius_set_radius_health(ngx_conf_t *cf,
     }
 
     lcf->type = HEALTH;
-    lcf->health.user = value[1];
+    if (cf->args->nelts >= 2) {
+        lcf->health.user = value[1];
+    }
 
     if (cf->args->nelts == 3) {
         lcf->health.passwd = value[2];

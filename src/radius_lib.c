@@ -335,9 +335,11 @@ make_access_request_pkg(radius_pkg_builder_t *b,
     radius_error_t rc;
     // User-Name
     // https://www.rfc-editor.org/rfc/rfc2865#section-5.1
-    rc = put_string_attr(b, RADIUS_ATTR_USER_NAME, user);
-    if (rc != radius_err_ok) {
-        return rc;
+    if (user->len > 0) {
+        rc = put_string_attr(b, RADIUS_ATTR_USER_NAME, user);
+        if (rc != radius_err_ok) {
+            return rc;
+        }
     }
 
     // User-Password
