@@ -42,7 +42,6 @@ typedef struct {
     ngx_uint_t auth_retries;
     ngx_msec_t health_timeout;
     ngx_uint_t health_retries;
-    ngx_str_t secret;
 } ngx_http_auth_radius_main_conf_t;
 
 typedef enum {
