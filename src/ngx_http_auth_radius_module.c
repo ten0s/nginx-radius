@@ -691,7 +691,9 @@ add_radius_server(radius_server_t *rs,
     rs->sockaddr = sockaddr;
     rs->socklen = socklen;
     rs->secret = *secret;
-    rs->nas_id = *nas_id;
+    if (nas_id) {
+        rs->nas_id = *nas_id;
+    }
     ngx_memset(rs->req_queue, 0, sizeof(rs->req_queue));
 
     size_t i;
