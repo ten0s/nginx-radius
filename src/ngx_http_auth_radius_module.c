@@ -115,14 +115,14 @@ ngx_http_auth_radius_set_radius_health_retries(ngx_conf_t *cf,
                                                void *conf);
 
 static char *
-ngx_http_auth_radius_set_auth_radius(ngx_conf_t *cf,
+ngx_http_auth_radius_set_radius_auth(ngx_conf_t *cf,
                                      ngx_command_t *cmd,
                                      void *conf);
 
 static char *
-ngx_http_auth_radius_set_auth_radius_health(ngx_conf_t *cf,
-                                            ngx_command_t *cmd,
-                                            void *conf);
+ngx_http_auth_radius_set_radius_health(ngx_conf_t *cf,
+                                       ngx_command_t *cmd,
+                                       void *conf);
 
 static ngx_int_t
 ngx_http_auth_radius_init_servers(ngx_cycle_t *cycle);
@@ -169,14 +169,21 @@ static ngx_command_t ngx_http_auth_radius_commands[] = {
 
     { ngx_string("auth_radius"),
       NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
-      ngx_http_auth_radius_set_auth_radius,
+      ngx_http_auth_radius_set_radius_auth,
       0,
       0,
       NULL },
 
-    { ngx_string("auth_radius_health"),
+    { ngx_string("radius_auth"),
+      NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
+      ngx_http_auth_radius_set_radius_auth,
+      0,
+      0,
+      NULL },
+
+    { ngx_string("radius_health"),
       NGX_HTTP_LOC_CONF | NGX_CONF_TAKE12,
-      ngx_http_auth_radius_set_auth_radius_health,
+      ngx_http_auth_radius_set_radius_health,
       0,
       0,
       NULL },
@@ -571,7 +578,7 @@ ngx_http_auth_radius_set_radius_health_retries(ngx_conf_t *cf,
 }
 
 static char *
-ngx_http_auth_radius_set_auth_radius(ngx_conf_t *cf,
+ngx_http_auth_radius_set_radius_auth(ngx_conf_t *cf,
                                      ngx_command_t *cmd,
                                      void *conf)
 {
@@ -586,7 +593,7 @@ ngx_http_auth_radius_set_auth_radius(ngx_conf_t *cf,
 
     if (lcf->type == HEALTH) {
         CONF_LOG_EMERG(cf, ngx_errno,
-                       "\"auth_radius_health\" already defined");
+                       "\"radius_health\" already defined");
         return NGX_CONF_ERROR;
     }
 
@@ -609,9 +616,9 @@ ngx_http_auth_radius_set_auth_radius(ngx_conf_t *cf,
 }
 
 static char *
-ngx_http_auth_radius_set_auth_radius_health(ngx_conf_t *cf,
-                                            ngx_command_t *cmd,
-                                            void *conf)
+ngx_http_auth_radius_set_radius_health(ngx_conf_t *cf,
+                                       ngx_command_t *cmd,
+                                       void *conf)
 {
     ngx_str_t *value = cf->args->elts;
 
@@ -627,7 +634,7 @@ ngx_http_auth_radius_set_auth_radius_health(ngx_conf_t *cf,
 
     if (lcf->type == AUTH) {
         CONF_LOG_EMERG(cf, ngx_errno,
-                       "\"auth_radius\" already defined");
+                       "\"auth_radius\" or \"radius_auth\" already defined");
         return NGX_CONF_ERROR;
     }
 

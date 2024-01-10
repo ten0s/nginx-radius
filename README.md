@@ -48,9 +48,10 @@ radius_auth_retries      1;
 
 # Location directive to enable module and make auth request.
 auth_radius         "realm" | off;
+radius_auth         "realm" | off;
 
 # Location directive to enable module and make health request.
-auth_radius_health  "user" ["passwd"];
+radius_health  "user" ["passwd"];
 ```
 
 6. Installation (optional):
