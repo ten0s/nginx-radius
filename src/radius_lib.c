@@ -188,7 +188,7 @@ static void
 gen_auth(radius_auth_t *auth)
 {
     uint8_t i;
-    for(i = 0; i < sizeof(radius_auth_t); i++) {
+    for (i = 0; i < sizeof(radius_auth_t); i++) {
         auth->d[i] = (uint8_t)(random() & UCHAR_MAX);
     }
 }
@@ -241,7 +241,7 @@ put_passwd_crypt(radius_pkg_builder_t *b,
     ctx = s_ctx;
     ngx_md5_update(&ctx, &b->pkg->hdr.auth, sizeof(b->pkg->hdr.auth));
 
-    radius_attr_hdr_t *ah = (radius_attr_hdr_t *)b->pos;
+    radius_attr_hdr_t *ah = (radius_attr_hdr_t *) b->pos;
 
     ah->type = RADIUS_ATTR_USER_PASSWORD;
     b->pos += sizeof(radius_attr_hdr_t);

@@ -801,7 +801,7 @@ create_radius_connection(struct sockaddr *sockaddr,
     uint16_t port = 0;
     if (family == AF_INET) {
         struct sockaddr_in sa;
-        ngx_memset(&sa, 0, sizeof(sa));
+        ngx_memzero(&sa, sizeof(sa));
         if (getsockname(sockfd, (struct sockaddr *)&sa, &socklen) != -1) {
             inet_ntop(family, &sa.sin_addr, host, sizeof(host)),
             port = ntohs(sa.sin_port);
@@ -810,7 +810,7 @@ create_radius_connection(struct sockaddr *sockaddr,
         }
     } else if (family == AF_INET6) {
         struct sockaddr_in6 sa;
-        ngx_memset(&sa, 0, sizeof(sa));
+        ngx_memzero(&sa, sizeof(sa));
         if (getsockname(sockfd, (struct sockaddr *)&sa, &socklen) != -1) {
             inet_ntop(family, &sa.sin6_addr, host, sizeof(host)),
             port = ntohs(sa.sin6_port);
@@ -846,7 +846,7 @@ add_radius_server(radius_server_t *rs,
     if (nas_id) {
         rs->nas_id = *nas_id;
     }
-    ngx_memset(rs->req_queue, 0, sizeof(rs->req_queue));
+    ngx_memzero(rs->req_queue, sizeof(rs->req_queue));
 
     size_t i;
     radius_req_t *req;
