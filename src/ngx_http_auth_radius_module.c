@@ -345,7 +345,7 @@ ngx_http_auth_radius_handler(ngx_http_request_t *r)
 
         if (lcf->type == HEALTH) {
             // Whatever accepted or rejected
-            LOG_INFO(log, "healthty r: 0x%xl", r);
+            LOG_INFO(log, "healthy r: 0x%xl", r);
             return NGX_OK;
         }
 
