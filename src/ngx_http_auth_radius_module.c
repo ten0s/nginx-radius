@@ -64,6 +64,12 @@ typedef struct {
 } ngx_http_auth_radius_loc_conf_t;
 
 typedef struct {
+    // Read-only
+    ngx_str_t user;
+    ngx_str_t passwd;
+    ngx_msec_t timeout;
+    uint8_t max_retries;
+    // Read-write
     uint8_t rs_idx;
     uint8_t retries;
     radius_req_t *req;
@@ -246,14 +252,11 @@ add_radius_server(radius_server_t *rs,
 
 static ngx_int_t
 select_radius_server(ngx_http_request_t *r,
-                     ngx_http_auth_radius_main_conf_t *mcf,
-                     ngx_http_auth_radius_loc_conf_t *lcf,
+                     const ngx_array_t *servers,
                      ngx_http_auth_radius_ctx_t *ctx);
 
 static ngx_int_t
 send_radius_request(ngx_http_request_t *r,
-                    ngx_http_auth_radius_main_conf_t *mcf,
-                    ngx_http_auth_radius_loc_conf_t *lcf,
                     ngx_http_auth_radius_ctx_t *ctx,
                     radius_req_t *req);
 
@@ -318,6 +321,19 @@ ngx_http_auth_radius_handler(ngx_http_request_t *r)
             LOG_ERR(log, ngx_errno, "ngx_pcalloc failed r: 0x%xl", r);
             return NGX_ERROR;
         }
+
+        if (lcf->type == AUTH) {
+            ctx->user = r->headers_in.user;
+            ctx->passwd = r->headers_in.passwd;
+            ctx->timeout = mcf->auth_timeout;
+            ctx->max_retries = mcf->auth_retries;
+        } else {
+            ctx->user = lcf->health.user;
+            ctx->passwd = lcf->health.passwd;
+            ctx->timeout = mcf->health_timeout;
+            ctx->max_retries = mcf->health_retries;
+        }
+
         ngx_http_set_ctx(r, ctx, ngx_http_auth_radius_module);
     }
 
@@ -339,7 +355,7 @@ ngx_http_auth_radius_handler(ngx_http_request_t *r)
                 return NGX_HTTP_SERVICE_UNAVAILABLE;
             } else {
                 LOG_INFO(log, "try next server r: 0x%xl", r);
-                return select_radius_server(r, mcf, lcf, ctx);
+                return select_radius_server(r, mcf->servers, ctx);
             }
         }
 
@@ -358,7 +374,7 @@ ngx_http_auth_radius_handler(ngx_http_request_t *r)
         return NGX_OK;
     }
 
-    return select_radius_server(r, mcf, lcf, ctx);
+    return select_radius_server(r, mcf->servers, ctx);
 }
 
 static ngx_int_t
@@ -861,13 +877,12 @@ add_radius_server(radius_server_t *rs,
 
 static ngx_int_t
 select_radius_server(ngx_http_request_t *r,
-                     ngx_http_auth_radius_main_conf_t *mcf,
-                     ngx_http_auth_radius_loc_conf_t *lcf,
+                     const ngx_array_t *servers,
                      ngx_http_auth_radius_ctx_t *ctx)
 {
     ngx_log_t *log = r->connection->log;
 
-    radius_server_t *rss = mcf->servers->elts;
+    radius_server_t *rss = servers->elts;
     radius_server_t *rs = &rss[ctx->rs_idx];
 
     radius_req_t *req = acquire_radius_req(rs);
@@ -889,7 +904,7 @@ select_radius_server(ngx_http_request_t *r,
         return NGX_AGAIN;
     }
 
-    ctx->retries = lcf->type == AUTH ? mcf->auth_retries : mcf->health_retries;
+    ctx->retries = ctx->max_retries;
     ctx->req = req;
     ctx->done = 0;
     ctx->accepted = 0;
@@ -901,7 +916,7 @@ select_radius_server(ngx_http_request_t *r,
 
     LOG_DEBUG(log, "r: 0x%xl, rs: 0x%xl, req: 0x%xl, req_id: %d",
               r, rs, req, req->id);
-    int rc = send_radius_request(r, mcf, lcf, ctx, req);
+    int rc = send_radius_request(r, ctx, req);
     if (rc == NGX_ERROR) {
         LOG_INFO(log, "internal error r: 0x%xl", r);
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
@@ -912,30 +927,12 @@ select_radius_server(ngx_http_request_t *r,
 
 static ngx_int_t
 send_radius_request(ngx_http_request_t *r,
-                    ngx_http_auth_radius_main_conf_t *mcf,
-                    ngx_http_auth_radius_loc_conf_t *lcf,
                     ngx_http_auth_radius_ctx_t *ctx,
                     radius_req_t *req)
 {
     ngx_log_t *log = r->connection->log;
 
-    ngx_str_t *user;
-    ngx_str_t *passwd;
-    ngx_msec_t timeout;
-
-    if (lcf->type == AUTH) {
-        user = &r->headers_in.user;
-        passwd = &r->headers_in.passwd;
-        timeout = mcf->auth_timeout;
-    } else if (lcf->type == HEALTH) {
-        user = &lcf->health.user;
-        passwd = &lcf->health.passwd;
-        timeout = mcf->health_timeout;
-    } else {
-        assert(0);
-    }
-
-    int rc = send_radius_pkg(req, user, passwd, timeout, log);
+    int rc = send_radius_pkg(req, &ctx->user, &ctx->passwd, ctx->timeout, log);
     if (rc == -1) {
         LOG_ERR(log, 0, "req failed r: 0x%xl, req: 0x%xl, req_id: %d",
                 r, req, req->id);
@@ -1123,12 +1120,6 @@ radius_read_handler(ngx_event_t *ev)
         return;
     }
 
-    ngx_http_auth_radius_main_conf_t *mcf;
-    mcf = ngx_http_get_module_main_conf(r, ngx_http_auth_radius_module);
-
-    ngx_http_auth_radius_loc_conf_t *lcf;
-    lcf = ngx_http_get_module_loc_conf(r, ngx_http_auth_radius_module);
-
     ngx_http_auth_radius_ctx_t *ctx;
     ctx = ngx_http_get_module_ctx(r, ngx_http_auth_radius_module);
     if (ctx == NULL) {
@@ -1152,7 +1143,7 @@ radius_read_handler(ngx_event_t *ev)
         }
 
         // Re-send RADIUS Auth event
-        ngx_int_t rc = send_radius_request(r, mcf, lcf, ctx, req);
+        ngx_int_t rc = send_radius_request(r, ctx, req);
         if (rc == NGX_ERROR) {
             ctx->done = 1;
             ctx->internal_error = 1;
