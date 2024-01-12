@@ -459,9 +459,6 @@ ngx_http_auth_radius_set_radius_server(ngx_conf_t *cf,
         return NGX_CONF_ERROR;
     }
 
-    ngx_http_auth_radius_main_conf_t *mcf;
-    mcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_auth_radius_module);
-
     ngx_url_t u;
     ngx_memzero(&u, sizeof(ngx_url_t));
     u.url = value[1];
@@ -475,6 +472,9 @@ ngx_http_auth_radius_set_radius_server(ngx_conf_t *cf,
         }
         return NGX_CONF_ERROR;
     }
+
+    ngx_http_auth_radius_main_conf_t *mcf;
+    mcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_auth_radius_module);
 
     ngx_str_t *secret = &value[2];
 
@@ -507,9 +507,6 @@ ngx_http_auth_radius_set_radius_auth_timeout(ngx_conf_t *cf,
 {
     ngx_str_t* value = cf->args->elts;
 
-    ngx_http_auth_radius_main_conf_t* mcf;
-    mcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_auth_radius_module);
-
     ngx_int_t timeout = ngx_parse_time(&value[1], 0);
     if (timeout == NGX_ERROR) {
         CONF_LOG_EMERG(cf, ngx_errno,
@@ -517,6 +514,9 @@ ngx_http_auth_radius_set_radius_auth_timeout(ngx_conf_t *cf,
                        &value[1]);
         return NGX_CONF_ERROR;
     }
+
+    ngx_http_auth_radius_main_conf_t* mcf;
+    mcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_auth_radius_module);
 
     mcf->auth_timeout = timeout;
 
@@ -530,9 +530,6 @@ ngx_http_auth_radius_set_radius_health_timeout(ngx_conf_t *cf,
 {
     ngx_str_t* value = cf->args->elts;
 
-    ngx_http_auth_radius_main_conf_t* mcf;
-    mcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_auth_radius_module);
-
     ngx_int_t timeout = ngx_parse_time(&value[1], 0);
     if (timeout == NGX_ERROR) {
         CONF_LOG_EMERG(cf, ngx_errno,
@@ -540,6 +537,9 @@ ngx_http_auth_radius_set_radius_health_timeout(ngx_conf_t *cf,
                        &value[1]);
         return NGX_CONF_ERROR;
     }
+
+    ngx_http_auth_radius_main_conf_t* mcf;
+    mcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_auth_radius_module);
 
     mcf->health_timeout = timeout;
 
@@ -553,9 +553,6 @@ ngx_http_auth_radius_set_radius_auth_retries(ngx_conf_t *cf,
 {
     ngx_str_t* value = cf->args->elts;
 
-    ngx_http_auth_radius_main_conf_t* mcf;
-    mcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_auth_radius_module);
-
     ngx_int_t retries = ngx_atoi(value[1].data, value[1].len);
     if (retries == NGX_ERROR) {
         CONF_LOG_EMERG(cf, ngx_errno,
@@ -563,6 +560,9 @@ ngx_http_auth_radius_set_radius_auth_retries(ngx_conf_t *cf,
                        &value[1]);
         return NGX_CONF_ERROR;
     }
+
+    ngx_http_auth_radius_main_conf_t* mcf;
+    mcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_auth_radius_module);
 
     mcf->auth_retries = retries;
 
@@ -576,9 +576,6 @@ ngx_http_auth_radius_set_radius_health_retries(ngx_conf_t *cf,
 {
     ngx_str_t* value = cf->args->elts;
 
-    ngx_http_auth_radius_main_conf_t* mcf;
-    mcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_auth_radius_module);
-
     ngx_int_t retries = ngx_atoi(value[1].data, value[1].len);
     if (retries == NGX_ERROR) {
         CONF_LOG_EMERG(cf, ngx_errno,
@@ -586,6 +583,9 @@ ngx_http_auth_radius_set_radius_health_retries(ngx_conf_t *cf,
                        &value[1]);
         return NGX_CONF_ERROR;
     }
+
+    ngx_http_auth_radius_main_conf_t* mcf;
+    mcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_auth_radius_module);
 
     mcf->health_retries = retries;
 
@@ -647,6 +647,7 @@ ngx_http_auth_radius_set_radius_health(ngx_conf_t *cf,
     }
 
     lcf->type = HEALTH;
+
     if (cf->args->nelts >= 2) {
         lcf->health.user = value[1];
     }
