@@ -624,7 +624,6 @@ ngx_http_auth_radius_init_servers(ngx_cycle_t *cycle)
     }
 
     ngx_log_t *log = cycle->log;
-    LOG_DEBUG(log, "");
     return init_radius_servers(mcf->servers, log);
 }
 
@@ -640,7 +639,6 @@ ngx_http_auth_radius_destroy_servers(ngx_cycle_t *cycle)
     }
 
     ngx_log_t *log = cycle->log;
-    LOG_DEBUG(log, "");
     destroy_radius_servers(mcf->servers, log);
 }
 
@@ -671,7 +669,7 @@ init_radius_servers(ngx_array_t *servers, ngx_log_t *log)
         } else {
             LOG_ERR(log, 0, "unknown family: %d", family);
         }
-        LOG_DEBUG(log, "server: %d, addr: %s:%d", i, host, port);
+        LOG_DEBUG(log, "\"%V\", addr: %s:%d", &rs->name, host, port);
 
         for (j = 0; j < rs->req_queue_size; ++j) {
             radius_req_t *req = &rs->req_queue[j];
