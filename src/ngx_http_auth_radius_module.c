@@ -437,7 +437,7 @@ ngx_http_auth_radius_set_radius_server_block(ngx_conf_t *cf,
     }
 
     size_t i;
-    radius_req_t *req;
+    radius_req_t *req = NULL;
     for (i = 1; i < rs->req_queue_size; ++i) {
         req = &rs->req_queue[i];
         req->id = i;
