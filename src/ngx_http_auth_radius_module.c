@@ -5,8 +5,6 @@
 #include "logger.h"
 #include "radius_lib.h"
 
-#define ARR_LEN(arr) sizeof(arr)/sizeof(arr[0])
-
 #define RADIUS_DEFAULT_PORT 1812
 
 struct radius_server_s;
