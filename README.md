@@ -30,21 +30,30 @@ $ make gdb
 Sample config file: `conf/nginx.conf`:
 
 ```
-# Address, secret and nas-identifier of radius server.
+# Main directive to add a Radius server.
 # Can be several servers.
-radius_server            127.0.0.1:1812 "secret" ["nas-identifier"];
+radius_server "radius_server_1" {
+    # Radius server URL
+    url "127.0.0.1:1812";
 
-# Timeout for radius auth requests.
-radius_auth_timeout      5s;
+    # Radius server shared secret
+    secret "secret";
 
-# Retries count for radius auth requests.
-radius_auth_retries      3;
+    # NAS identifier (optional)
+    nas_identifier "nas-identifier";
 
-# Timeout for radius health requests.
-radius_auth_timeout      5s;
+    # Timeout for Radius auth requests
+    auth_timeout   5s;
 
-# Retries count for radius health requests.
-radius_auth_retries      1;
+    # Retries count for Radius auth requests
+    auth_retries   3;
+
+    # Timeout for Radius health requests
+    health_timeout 5s;
+
+    # Retries count for Radius health requests
+    health_retries 1;
+}
 
 # Location directive to enable module and make auth request.
 auth_radius              "realm" | off;
