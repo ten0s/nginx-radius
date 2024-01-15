@@ -39,20 +39,25 @@ radius_server "radius_server_1" {
     # Radius server shared secret
     secret "secret";
 
-    # NAS identifier (optional)
+    # NAS identifier. (optional)
     nas_identifier "nas-identifier";
 
-    # Timeout for Radius auth requests
+    # Timeout for Radius auth requests, optional, default: 5s
     auth_timeout   5s;
 
-    # Retries count for Radius auth requests
+    # Retries count for Radius auth requests, optional, default: 3
     auth_retries   3;
 
-    # Timeout for Radius health requests
+    # Timeout for Radius health requests, optional, default: 5s
     health_timeout 5s;
 
-    # Retries count for Radius health requests
+    # Retries count for Radius health requests, optional, default: 1
     health_retries 1;
+
+    # Radius auth/health requests queue size, optional, default: 10.
+    # Effectively, the number of concurrent requests that can be
+    # processed without retrying.
+    queue_size     10;
 }
 
 # Location directive to enable module and make auth request.

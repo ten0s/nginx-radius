@@ -36,8 +36,8 @@ typedef struct radius_server_s {
     ngx_uint_t health_retries;
     // Effectively, the number of concurrent requests that can be
     // processed without retrying. See ngx_http_auth_radius_handler.
-    // TODO: get 'queue_size' [1..255] from server config
-    radius_req_t req_queue[10];
+    uint8_t req_queue_size;
+    radius_req_t *req_queue;
     radius_req_t *req_free_list;
     radius_req_t *req_last_list;
 } radius_server_t;
@@ -419,16 +419,7 @@ ngx_http_auth_radius_set_radius_server_block(ngx_conf_t *cf,
     rs->auth_retries = 3;
     rs->health_timeout = 5000;
     rs->health_retries = 1;
-
-    size_t i;
-    radius_req_t *req;
-    for (i = 1; i < ARR_LEN(rs->req_queue); ++i) {
-        req = &rs->req_queue[i];
-        req->id = i;
-        rs->req_queue[i - 1].next = req;
-    }
-    rs->req_free_list = &rs->req_queue[0];
-    rs->req_last_list = req;
+    rs->req_queue_size = 10;
 
     // Set ngx_http_auth_radius_set_radius_server as a handler
     // for each value in the block
@@ -437,6 +428,23 @@ ngx_http_auth_radius_set_radius_server_block(ngx_conf_t *cf,
     cf->handler_conf = conf;
     char *rc = ngx_conf_parse(cf, NULL);
     *cf = save;
+
+    rs->req_queue = ngx_pcalloc(cf->pool,
+                                rs->req_queue_size * sizeof(radius_req_t));
+    if (rs->req_queue == NULL) {
+        CONF_LOG_EMERG(cf, ngx_errno, "ngx_pcalloc failed");
+        return NGX_CONF_ERROR;
+    }
+
+    size_t i;
+    radius_req_t *req;
+    for (i = 1; i < rs->req_queue_size; ++i) {
+        req = &rs->req_queue[i];
+        req->id = i;
+        rs->req_queue[i - 1].next = req;
+    }
+    rs->req_free_list = &rs->req_queue[0];
+    rs->req_last_list = req;
 
     return rc;
 }
@@ -511,6 +519,22 @@ ngx_http_auth_radius_set_radius_server(ngx_conf_t *cf,
             return NGX_CONF_ERROR;
         }
         rs->health_retries = retries;
+    } else if (ngx_strncmp(value[0].data, "queue_size", value[0].len) == 0) {
+        ngx_int_t size = ngx_atoi(value[1].data, value[1].len);
+        if (size == NGX_ERROR) {
+            CONF_LOG_EMERG(cf, ngx_errno,
+                           "invalid \"queue_size\" value: \"%V\"",
+                           &value[1]);
+            return NGX_CONF_ERROR;
+        }
+        if (size < 1 || size > 255) {
+            CONF_LOG_EMERG(cf, 0,
+                           "invalid \"queue_size\" value: \"%V\", "
+                           "expected value range [1, 255]",
+                           &value[1]);
+            return NGX_CONF_ERROR;
+        }
+        rs->req_queue_size = size;
     } else {
         CONF_LOG_EMERG(cf, 0,
                        "unknown option \"%V\"",
@@ -649,7 +673,7 @@ init_radius_servers(ngx_array_t *servers, ngx_log_t *log)
         }
         LOG_DEBUG(log, "server: %d, addr: %s:%d", i, host, port);
 
-        for (j = 0; j < ARR_LEN(rs->req_queue); ++j) {
+        for (j = 0; j < rs->req_queue_size; ++j) {
             radius_req_t *req = &rs->req_queue[j];
             ngx_connection_t *c = create_radius_connection(rs->sockaddr,
                                                            rs->socklen, log);
@@ -678,7 +702,7 @@ destroy_radius_servers(ngx_array_t* servers, ngx_log_t *log)
     radius_server_t *rss = servers->elts;
     for (i = 0; i < servers->nelts; ++i) {
         radius_server_t *rs = &rss[i];
-        for (j = 0; j < ARR_LEN(rs->req_queue); ++j) {
+        for (j = 0; j < rs->req_queue_size; ++j) {
            radius_req_t *req = &rs->req_queue[j];
             if (req->conn) {
                 close_radius_connection(req->conn);
@@ -790,7 +814,6 @@ select_radius_server(ngx_http_request_t *r,
     radius_req_t *req = acquire_radius_req(rs);
     if (req == NULL) {
         LOG_NOTICE(log, 0, "requests queue is full, retrying...");
-        // TODO: log message about increasing 'queue_size'
 
         // Subscribe to retry timeout event
         ngx_event_t *ev = ngx_pcalloc(r->pool, sizeof(ngx_event_t));
