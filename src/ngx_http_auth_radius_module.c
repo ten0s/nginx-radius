@@ -511,6 +511,11 @@ ngx_http_auth_radius_set_radius_server(ngx_conf_t *cf,
             return NGX_CONF_ERROR;
         }
         rs->health_retries = retries;
+    } else {
+        CONF_LOG_EMERG(cf, 0,
+                       "unknown option \"%V\"",
+                       &value[0]);
+        return NGX_CONF_ERROR;
     }
 
     return NGX_CONF_OK;
