@@ -406,7 +406,7 @@ ngx_http_auth_radius_set_radius_server_block(ngx_conf_t *cf,
 
     radius_server_t *rs = ngx_array_push(mcf->servers);
     if (rs == NULL) {
-        CONF_LOG_EMERG(cf, ngx_errno, "\"%V\" nomem", &value[0]);
+        CONF_LOG_EMERG(cf, ngx_errno, "ngx_array_push failed");
         return NGX_CONF_ERROR;
     }
 
