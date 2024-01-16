@@ -41,7 +41,7 @@ typedef struct radius_server_s {
 } radius_server_t;
 
 typedef struct {
-    ngx_array_t *servers;
+    ngx_array_t *servers; // [radius_server_t]
 } ngx_http_auth_radius_main_conf_t;
 
 typedef enum {
@@ -61,6 +61,7 @@ typedef struct {
             ngx_str_t passwd;
         } health;
     };
+    ngx_array_t *server_ptrs; // [radius_server_t *]
 } ngx_http_auth_radius_loc_conf_t;
 
 typedef struct {
@@ -105,6 +106,11 @@ ngx_http_auth_radius_set_radius_server(ngx_conf_t *cf,
                                        void *conf);
 
 static char *
+ngx_http_auth_radius_set_radius_servers(ngx_conf_t *cf,
+                                        ngx_command_t *cmd,
+                                        void *conf);
+
+static char *
 ngx_http_auth_radius_set_radius_auth(ngx_conf_t *cf,
                                      ngx_command_t *cmd,
                                      void *conf);
@@ -123,8 +129,15 @@ ngx_http_auth_radius_destroy_servers(ngx_cycle_t *cycle);
 static ngx_command_t ngx_http_auth_radius_commands[] = {
 
     { ngx_string("radius_server"),
-      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_CONF_BLOCK | NGX_CONF_TAKE1,
+      NGX_HTTP_MAIN_CONF | NGX_CONF_BLOCK | NGX_CONF_TAKE1,
       ngx_http_auth_radius_set_radius_server_block,
+      0,
+      0,
+      NULL },
+
+    { ngx_string("radius_servers"),
+      NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
+      ngx_http_auth_radius_set_radius_servers,
       0,
       0,
       NULL },
@@ -201,7 +214,7 @@ close_radius_connection(ngx_connection_t *c);
 
 static ngx_int_t
 select_radius_server(ngx_http_request_t *r,
-                     const ngx_array_t *servers,
+                     const ngx_array_t *server_ptrs,
                      ngx_http_auth_radius_ctx_t *ctx);
 
 static ngx_int_t
@@ -234,14 +247,16 @@ ngx_http_auth_radius_handler(ngx_http_request_t *r)
 {
     ngx_log_t *log = r->connection->log;
 
-    ngx_http_auth_radius_main_conf_t *mcf;
-    mcf = ngx_http_get_module_main_conf(r, ngx_http_auth_radius_module);
-
     ngx_http_auth_radius_loc_conf_t *lcf;
     lcf = ngx_http_get_module_loc_conf(r, ngx_http_auth_radius_module);
 
     if (lcf->type == NONE) {
         return NGX_DECLINED;
+    }
+
+    if (lcf->server_ptrs == NULL) {
+        LOG_ERR(log, 0, "no servers defined for location r: 0x%xl", r);
+        return NGX_HTTP_SERVICE_UNAVAILABLE;
     }
 
     ngx_http_auth_radius_ctx_t *ctx;
@@ -296,12 +311,12 @@ ngx_http_auth_radius_handler(ngx_http_request_t *r)
                 LOG_INFO(log, "connection refused r: 0x%xl", r);
             }
             ctx->rs_idx++;
-            if (ctx->rs_idx >= mcf->servers->nelts) {
+            if (ctx->rs_idx >= lcf->server_ptrs->nelts) {
                 LOG_INFO(log, "no more servers r: 0x%xl", r);
                 return NGX_HTTP_SERVICE_UNAVAILABLE;
             } else {
                 LOG_INFO(log, "try next server r: 0x%xl", r);
-                return select_radius_server(r, mcf->servers, ctx);
+                return select_radius_server(r, lcf->server_ptrs, ctx);
             }
         }
 
@@ -320,7 +335,7 @@ ngx_http_auth_radius_handler(ngx_http_request_t *r)
         return NGX_OK;
     }
 
-    return select_radius_server(r, mcf->servers, ctx);
+    return select_radius_server(r, lcf->server_ptrs, ctx);
 }
 
 static ngx_int_t
@@ -371,9 +386,8 @@ ngx_http_auth_radius_create_loc_conf(ngx_conf_t *cf)
 static char*
 ngx_http_auth_radius_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
 {
-    //ngx_http_auth_radius_main_conf_t *prev = parent;
+    //ngx_http_auth_radius_loc_conf_t *prev = parent;
     //ngx_http_auth_radius_loc_conf_t *conf = child;
-
     //ngx_conf_merge_str_value(conf->realm, prev->realm, "");
 
     return NGX_CONF_OK;
@@ -455,8 +469,10 @@ ngx_http_auth_radius_set_radius_server(ngx_conf_t *cf,
     ngx_http_auth_radius_main_conf_t *mcf = conf;
 
     // Get latest server from servers array
-    radius_server_t *rs;
-    rs = ((radius_server_t *) mcf->servers->elts + (mcf->servers->nelts - 1));
+    assert(mcf->servers != NULL);
+
+    radius_server_t *rss = mcf->servers->elts; // [radius_server_t]
+    radius_server_t *rs = &rss[mcf->servers->nelts - 1];
 
     ngx_str_t* value = cf->args->elts;
 
@@ -539,6 +555,64 @@ ngx_http_auth_radius_set_radius_server(ngx_conf_t *cf,
                        &value[0]);
         return NGX_CONF_ERROR;
     }
+
+    return NGX_CONF_OK;
+}
+
+static char *
+ngx_http_auth_radius_set_radius_servers(ngx_conf_t *cf,
+                                        ngx_command_t *cmd,
+                                        void *conf)
+{
+    ngx_str_t *value = cf->args->elts;
+
+    ngx_http_auth_radius_main_conf_t *mcf;
+    mcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_auth_radius_module);
+
+    if (mcf->servers == NULL) {
+        CONF_LOG_EMERG(cf, 0,
+                       "using \"radius_servers\" without \"radius_server\" defined");
+        return NGX_CONF_ERROR;
+    }
+
+    ngx_http_auth_radius_loc_conf_t *lcf;
+    lcf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_auth_radius_module);
+
+    if (lcf->server_ptrs == NULL) {
+        lcf->server_ptrs = ngx_array_create(cf->pool, 5, sizeof(radius_server_t *));
+        if (lcf->server_ptrs == NULL) {
+            CONF_LOG_EMERG(cf, ngx_errno, "ngx_array_create failed");
+            return NGX_CONF_ERROR;
+        }
+    }
+
+    assert(mcf->servers != NULL);
+
+    radius_server_t *rss = mcf->servers->elts; // [radius_server_t]
+    radius_server_t *server = NULL;
+
+    // Search server by name
+    size_t i;
+    for (i = 0; i < mcf->servers->nelts; i++) {
+        radius_server_t *rs = &rss[i];
+        if (ngx_strncmp(rs->name.data, value[1].data, rs->name.len) == 0) {
+            server = rs;
+            break;
+        }
+    }
+
+    if (server == NULL) {
+        CONF_LOG_EMERG(cf, 0, "server \"%V\" is not defined", value);
+        return NGX_CONF_ERROR;
+    }
+
+    radius_server_t **target = ngx_array_push(lcf->server_ptrs);
+    if (target == NULL) {
+        CONF_LOG_EMERG(cf, ngx_errno, "ngx_array_push failed");
+        return NGX_CONF_ERROR;
+    }
+
+    *target = server;
 
     return NGX_CONF_OK;
 }
@@ -648,6 +722,8 @@ init_radius_servers(ngx_array_t *servers, ngx_log_t *log)
         return NGX_ERROR;
     }
 
+    assert(servers != NULL);
+
     size_t i, j;
     radius_server_t *rss = servers->elts;
     for (i = 0; i < servers->nelts; ++i) {
@@ -693,6 +769,8 @@ destroy_radius_servers(ngx_array_t* servers, ngx_log_t *log)
         LOG_EMERG(log, 0, "no radius servers");
         return;
     }
+
+    assert(servers != NULL);
 
     size_t i, j;
     radius_server_t *rss = servers->elts;
@@ -799,13 +877,15 @@ close_radius_connection(ngx_connection_t *c)
 
 static ngx_int_t
 select_radius_server(ngx_http_request_t *r,
-                     const ngx_array_t *servers,
+                     const ngx_array_t *server_ptrs,
                      ngx_http_auth_radius_ctx_t *ctx)
 {
     ngx_log_t *log = r->connection->log;
 
-    radius_server_t *rss = servers->elts;
-    radius_server_t *rs = &rss[ctx->rs_idx];
+    assert(server_ptrs != NULL);
+
+    radius_server_t **rss = server_ptrs->elts; // [radius_server_t *]
+    radius_server_t *rs = rss[ctx->rs_idx];
 
     radius_req_t *req = acquire_radius_req(rs);
     if (req == NULL) {

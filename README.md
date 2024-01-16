@@ -31,7 +31,7 @@ Sample config file: `conf/nginx.conf`:
 
 ```
 # Main directive to add a Radius server.
-# Can be several servers.
+# Can be several "radius_server" directives.
 radius_server "radius_server_1" {
     # Radius server URL
     url "127.0.0.1:1812";
@@ -59,6 +59,10 @@ radius_server "radius_server_1" {
     # processed without retrying.
     queue_size     10;
 }
+
+# Location directive to select Radius server.
+# Can be several "radius_servers" directives per location.
+radius_servers "radius_server_1";
 
 # Location directive to enable module and make auth request.
 auth_radius              "realm" | off;
