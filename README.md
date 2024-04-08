@@ -59,7 +59,7 @@ radius_server "radius_server_1" {
 
     # Radius auth/health requests queue size, optional, default: 10
     # Effectively, the number of concurrent requests that can be
-    # processed without retrying.
+    # processed without rescheduling.
     queue_size     10;
 }
 

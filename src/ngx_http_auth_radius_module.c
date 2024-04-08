@@ -33,7 +33,7 @@ typedef struct radius_server_s {
     ngx_msec_t health_timeout;
     ngx_uint_t health_retries;
     // Effectively, the number of concurrent requests that can be
-    // processed without retrying. See ngx_http_auth_radius_handler.
+    // processed without rescheduling. See ngx_http_auth_radius_handler.
     uint8_t req_queue_size;
     radius_req_t *req_queue;
     radius_req_t *req_free_list;
@@ -196,7 +196,7 @@ static void
 radius_read_handler(ngx_event_t *ev);
 
 static void
-radius_retry_handler(ngx_event_t *ev);
+radius_reschedule_handler(ngx_event_t *ev);
 
 static ngx_int_t
 init_radius_servers(ngx_array_t *servers, ngx_log_t *log);
@@ -889,16 +889,16 @@ select_radius_server(ngx_http_request_t *r,
 
     radius_req_t *req = acquire_radius_req(rs);
     if (req == NULL) {
-        LOG_NOTICE(log, 0, "requests queue is full, retrying...");
+        LOG_NOTICE(log, 0, "requests queue is full, rescheduling...");
 
-        // Subscribe to retry timeout event
+        // Subscribe to reschedule timeout event
         ngx_event_t *ev = ngx_pcalloc(r->pool, sizeof(ngx_event_t));
         if (ev == NULL) {
             LOG_ERR(log, ngx_errno, "ngx_pcalloc failed r: 0x%xl", r);
             return NGX_ERROR;
         }
         ev->data = r;
-        ev->handler = radius_retry_handler;
+        ev->handler = radius_reschedule_handler;
         ev->log = r->connection->log;
         ngx_add_timer(ev, 100);
 
@@ -1093,7 +1093,7 @@ recv_radius_pkg(radius_req_t *req,
 }
 
 static void
-radius_retry_handler(ngx_event_t *ev)
+radius_reschedule_handler(ngx_event_t *ev)
 {
     ngx_http_request_t *r = ev->data;
     ngx_post_event(r->connection->write, &ngx_posted_events);
