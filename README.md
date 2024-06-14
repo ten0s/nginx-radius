@@ -1,4 +1,4 @@
-Almost totally rewriten version of https://github.com/lexelby/nginx-radius with<br>
+Almost totally rewritten version of https://github.com/lexelby/nginx-radius with<br>
 configuration inspired by https://github.com/timchengx/nginx-http-radius-module.<br>
 See configuration example at https://gitflic.ru/project/ten0s/nginx-radius.
 
